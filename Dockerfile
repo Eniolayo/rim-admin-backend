@@ -65,9 +65,6 @@ COPY --from=builder /app/src/database/data-source.ts ./src/database/data-source.
 # Copy entity files needed by seeds
 COPY --from=builder /app/src/modules ./src/modules
 
-# Copy CLI scripts (2FA init, TOTP generator)
-COPY --from=builder /app/src/scripts ./src/scripts
-
 # Copy tsconfig for ts-node to work
 COPY tsconfig.json ./
 
