@@ -76,4 +76,4 @@ RUN mkdir -p logs
 EXPOSE 3000
 
 # Start command
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
