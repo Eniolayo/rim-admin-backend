@@ -1,0 +1,101 @@
+---
+alwaysApply: true
+---
+
+# NestJS Backend Development Rules
+
+This document automatically includes all development rules for the RIM Backend project. These rules are applied to every prompt to ensure consistency and best practices.
+
+## Core Development Principles
+
+@.cursor/rules/core-principles.md
+
+## Architecture & Organization
+
+@.cursor/rules/module-organization.md
+
+@.cursor/rules/dependency-injection.md
+
+## Data Handling
+
+@.cursor/rules/dtos-validation.md
+
+@.cursor/rules/error-handling.md
+
+## Database & ORM
+
+@.cursor/rules/database-orm.md
+
+@.cursor/rules/database-schema.md
+
+## Performance & Optimization
+
+@.cursor/rules/performance.md
+
+## Configuration & Environment
+
+@.cursor/rules/configuration.md
+
+## Security Best Practices
+
+@.cursor/rules/security.md
+
+## Code Style & Patterns
+
+@.cursor/rules/code-style.md
+
+@.cursor/rules/logging.md
+
+## Anti-Patterns to Avoid
+
+@.cursor/rules/anti-patterns.md
+
+## Pre-Commit Checklist
+
+@.cursor/rules/checklist.md
+
+---
+
+## Quick Reference
+
+### Critical Rules to Remember
+
+<!-- 1. **ALWAYS read `docs/boooster_complete_schema.md` before any database work** -->
+2. **NEVER write migrations manually** - use TypeORM generation via Docker
+3. **ALWAYS validate input** with DTOs and class-validator
+4. **NEVER use `any` type** - use explicit types
+5. **ALWAYS use NestJS Logger** instead of console.log
+6. **NEVER put business logic in controllers** - keep them thin
+7. **ALWAYS avoid circular dependencies** between modules
+8. **NEVER commit secrets** or sensitive data
+9. **ALWAYS use constructor injection** for dependencies
+10. **NEVER block the event loop** with synchronous operations
+
+### Common Commands
+
+```bash
+# Generate migration
+docker-compose exec app npm run migration:generate -- src/database/migrations/MigrationName
+
+# Run migrations
+docker-compose exec app npm run migration:run
+
+# Revert migration
+docker-compose exec app npm run migration:revert
+
+# Run tests
+npm run test
+npm run test:cov
+npm run test:e2e
+```
+
+### Project Structure
+
+```
+src/
+├── modules/          # Feature modules (auth, user, order, etc.)
+├── common/           # Shared guards, decorators, interceptors
+├── config/           # Configuration files
+├── database/         # Entities, migrations, seeds
+└── main.ts           # Application entry point
+```
