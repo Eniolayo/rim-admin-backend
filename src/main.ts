@@ -6,7 +6,7 @@ import { Logger } from 'nestjs-pino';
 import Redis from 'ioredis';
 import { AppModule } from './app.module';
 import appConfig from './config/app.config';
-import { REDIS_CLIENT } from './common/redis/redis.module';
+import { REDIS_CLIENT } from './common/redis/redis.constants';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
