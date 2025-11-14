@@ -42,8 +42,11 @@ async function bootstrap(): Promise<void> {
     }),
   );
 
+  const port = configService.get<number>('app.port', 3000);
+
   // Swagger documentation
-  if (nodeEnv !== 'production') {
+  const enableSwagger = configService.get<boolean>('app.enableSwagger', false);
+  if (enableSwagger) {
     const config = new DocumentBuilder()
       .setTitle('RIM Admin API')
       .setDescription('RIM Admin Backend API Documentation')
@@ -52,15 +55,16 @@ async function bootstrap(): Promise<void> {
       .build();
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup(`${apiPrefix}/docs`, app, document);
+    logger.log(
+      `Swagger documentation: http://localhost:${port}/${apiPrefix}/docs`,
+    );
   }
 
-  const port = configService.get<number>('app.port', 3000);
   await app.listen(port);
 
-  logger.log(`Application is running on: http://localhost:${port}/${apiPrefix}`);
-  if (nodeEnv !== 'production') {
-    logger.log(`Swagger documentation: http://localhost:${port}/${apiPrefix}/docs`);
-  }
+  logger.log(
+    `Application is running on: http://localhost:${port}/${apiPrefix}`,
+  );
 }
 
 bootstrap();
