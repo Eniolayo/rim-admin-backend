@@ -1,73 +1,16 @@
-# Dependencies (will be installed during build)
 node_modules
 npm-debug.log
-yarn-error.log
-# Note: package-lock.json is needed for npm ci, so don't ignore it
-
-# Build output (will be generated during build)
 dist
-build
-*.tsbuildinfo
-
-# Environment files (should be passed as env vars, not copied)
 .env
-.env.*
-!.env.example
-
-# Version control
+.env.local
+.env.*.local
 .git
 .gitignore
-.gitattributes
-
-# Documentation
 README.md
-docs
-*.md
-
-# IDE and editor files
-.vscode
-.idea
-*.swp
-*.swo
-*~
-
-# Test files
-test
-*.spec.ts
-*.test.ts
+.eslintrc.js
+.prettierrc
 coverage
 .nyc_output
-jest.config.js
+.vscode
+.idea
 
-# Logs
-logs
-*.log
-
-# Temporary files
-.tmp
-temp
-.temp
-
-# Docker files (avoid recursive copying)
-docker-compose*.yml
-Dockerfile.dev
-Dockerfile
-
-# CI/CD
-.github
-.gitlab-ci.yml
-.circleci
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Linting and formatting configs (not needed in image)
-.eslintrc*
-.prettierrc*
-eslint.config.*
-.prettierignore
-
-# Development scripts
-dev-*.sh
-*.sh

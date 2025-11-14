@@ -10,22 +10,7 @@ import { LoggerModule } from './common/logger/logger.module';
 import databaseConfig, { DatabaseConfig } from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import appConfig from './config/app.config';
-import {
-  AdminUser,
-  AdminRole,
-  User,
-  Loan,
-  PendingLogin,
-  BackupCode,
-  Transaction,
-  SupportTicket,
-  ChatMessage,
-  TicketHistory,
-  SupportAgent,
-  Department,
-  AdminActivityLog,
-  SecuritySettings,
-} from './entities';
+import { AdminUser, AdminRole, User, Loan, PendingLogin, BackupCode, Transaction, SupportTicket, ChatMessage, TicketHistory, SupportAgent, Department, AdminActivityLog, SecuritySettings } from './entities';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { AdminTwoFactorGuard } from './modules/auth/guards/admin-2fa.guard';
 import { UsersModule } from './modules/users/users.module';
@@ -45,33 +30,11 @@ import { SupportModule } from './modules/support/support.module';
           .valid('development', 'production', 'test', 'staging')
           .default('development'),
         PORT: Joi.number().port().default(3000),
-        // Make DB variables optional if DATABASE_URL is provided
-        DATABASE_URL: Joi.string().optional(),
-        DB_HOST: Joi.string().when('DATABASE_URL', {
-          is: Joi.exist(),
-          then: Joi.optional(),
-          otherwise: Joi.required(),
-        }),
-        DB_PORT: Joi.number().port().when('DATABASE_URL', {
-          is: Joi.exist(),
-          then: Joi.optional(),
-          otherwise: Joi.required(),
-        }),
-        DB_USERNAME: Joi.string().when('DATABASE_URL', {
-          is: Joi.exist(),
-          then: Joi.optional(),
-          otherwise: Joi.required(),
-        }),
-        DB_PASSWORD: Joi.string().when('DATABASE_URL', {
-          is: Joi.exist(),
-          then: Joi.optional(),
-          otherwise: Joi.required(),
-        }),
-        DB_NAME: Joi.string().when('DATABASE_URL', {
-          is: Joi.exist(),
-          then: Joi.optional(),
-          otherwise: Joi.required(),
-        }),
+        DB_HOST: Joi.string().required(),
+        DB_PORT: Joi.number().port().required(),
+        DB_USERNAME: Joi.string().required(),
+        DB_PASSWORD: Joi.string().required(),
+        DB_NAME: Joi.string().required(),
         JWT_SECRET: Joi.string().min(32).required(),
         JWT_EXPIRATION: Joi.string().required(),
         JWT_REFRESH_SECRET: Joi.string().min(32).required(),
@@ -96,22 +59,7 @@ import { SupportModule } from './modules/support/support.module';
           username: dbConfig.username,
           password: dbConfig.password,
           database: dbConfig.database,
-          entities: [
-            AdminUser,
-            AdminRole,
-            User,
-            Loan,
-            PendingLogin,
-            BackupCode,
-            Transaction,
-            SupportTicket,
-            ChatMessage,
-            TicketHistory,
-            SupportAgent,
-            Department,
-            AdminActivityLog,
-            SecuritySettings,
-          ],
+          entities: [AdminUser, AdminRole, User, Loan, PendingLogin, BackupCode, Transaction, SupportTicket, ChatMessage, TicketHistory, SupportAgent, Department, AdminActivityLog, SecuritySettings],
           synchronize: false,
           logging: configService.get('NODE_ENV') === 'development',
         };
