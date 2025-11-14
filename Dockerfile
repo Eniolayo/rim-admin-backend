@@ -68,6 +68,9 @@ COPY --from=builder /app/src/modules ./src/modules
 # Copy tsconfig for ts-node to work
 COPY tsconfig.json ./
 
+# Copy ormconfig.ts needed for TypeORM migrations
+COPY --from=builder /app/ormconfig.ts ./
+
 
 # Create logs directory
 RUN mkdir -p logs
