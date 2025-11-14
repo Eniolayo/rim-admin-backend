@@ -3,8 +3,10 @@ import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { Logger } from 'nestjs-pino';
+import Redis from 'ioredis';
 import { AppModule } from './app.module';
 import appConfig from './config/app.config';
+import { REDIS_CLIENT } from './common/redis/redis.module';
 
 async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule, {
@@ -60,11 +62,78 @@ async function bootstrap(): Promise<void> {
     );
   }
 
+  // Connect to Redis
+  try {
+    const redisClient = app.get<Redis>(REDIS_CLIENT);
+
+    // Handle Redis errors
+    redisClient.on('error', (err) => {
+      logger.error('Redis connection error:', err);
+    });
+
+    redisClient.on('connect', () => {
+      logger.log('Redis client connected');
+    });
+
+    redisClient.on('ready', () => {
+      logger.log('Redis client ready');
+    });
+
+    redisClient.on('close', () => {
+      logger.warn('Redis connection closed');
+    });
+
+    // Connect only if not already connected/connecting
+    if (redisClient.status === 'wait' || redisClient.status === 'end') {
+      await redisClient.connect();
+      logger.log('Redis connected successfully');
+    } else if (redisClient.status === 'ready') {
+      logger.log('Redis already connected');
+    } else {
+      logger.log(`Redis status: ${redisClient.status}`);
+    }
+  } catch (error) {
+    logger.error('Failed to connect to Redis:', error);
+    // Continue application startup even if Redis fails
+    // This allows the app to run without Redis if needed
+  }
+
   await app.listen(port);
 
   logger.log(
     `Application is running on: http://localhost:${port}/${apiPrefix}`,
   );
+
+  // Graceful shutdown
+  process.on('SIGTERM', async () => {
+    logger.log('SIGTERM received, shutting down gracefully...');
+    try {
+      const redisClient = app.get<Redis>(REDIS_CLIENT);
+      if (redisClient && redisClient.status === 'ready') {
+        await redisClient.quit();
+        logger.log('Redis connection closed');
+      }
+    } catch (error) {
+      logger.error('Error closing Redis connection:', error);
+    }
+    await app.close();
+    process.exit(0);
+  });
+
+  process.on('SIGINT', async () => {
+    logger.log('SIGINT received, shutting down gracefully...');
+    try {
+      const redisClient = app.get<Redis>(REDIS_CLIENT);
+      if (redisClient && redisClient.status === 'ready') {
+        await redisClient.quit();
+        logger.log('Redis connection closed');
+      }
+    } catch (error) {
+      logger.error('Error closing Redis connection:', error);
+    }
+    await app.close();
+    process.exit(0);
+  });
 }
 
 bootstrap();

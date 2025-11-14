@@ -10,7 +10,23 @@ import { LoggerModule } from './common/logger/logger.module';
 import databaseConfig, { DatabaseConfig } from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import appConfig from './config/app.config';
-import { AdminUser, AdminRole, User, Loan, PendingLogin, BackupCode, Transaction, SupportTicket, ChatMessage, TicketHistory, SupportAgent, Department, AdminActivityLog, SecuritySettings } from './entities';
+import redisConfig from './config/redis.config';
+import {
+  AdminUser,
+  AdminRole,
+  User,
+  Loan,
+  PendingLogin,
+  BackupCode,
+  Transaction,
+  SupportTicket,
+  ChatMessage,
+  TicketHistory,
+  SupportAgent,
+  Department,
+  AdminActivityLog,
+  SecuritySettings,
+} from './entities';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { AdminTwoFactorGuard } from './modules/auth/guards/admin-2fa.guard';
 import { UsersModule } from './modules/users/users.module';
@@ -18,13 +34,14 @@ import { AdminModule } from './modules/admin/admin.module';
 import { LoansModule } from './modules/loans/loans.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { SupportModule } from './modules/support/support.module';
+import { RedisModule } from './common/redis/redis.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
-      load: [databaseConfig, jwtConfig, appConfig],
+      load: [databaseConfig, jwtConfig, appConfig, redisConfig],
       validationSchema: Joi.object({
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test', 'staging')
@@ -39,6 +56,23 @@ import { SupportModule } from './modules/support/support.module';
         JWT_EXPIRATION: Joi.string().required(),
         JWT_REFRESH_SECRET: Joi.string().min(32).required(),
         JWT_REFRESH_EXPIRATION: Joi.string().required(),
+        // Redis: URL for production, or host/port for development
+        REDIS_URL: Joi.string().uri().optional(),
+        REDIS_HOST: Joi.string().when('REDIS_URL', {
+          is: Joi.exist(),
+          then: Joi.optional(),
+          otherwise: Joi.string().default('localhost'),
+        }),
+        REDIS_PORT: Joi.number()
+          .port()
+          .when('REDIS_URL', {
+            is: Joi.exist(),
+            then: Joi.optional(),
+            otherwise: Joi.number().port().default(6379),
+          }),
+        REDIS_PASSWORD: Joi.string().optional(),
+        REDIS_USERNAME: Joi.string().optional(),
+        REDIS_TTL: Joi.number().optional().default(3600),
       }),
       validationOptions: {
         abortEarly: false,
@@ -59,13 +93,29 @@ import { SupportModule } from './modules/support/support.module';
           username: dbConfig.username,
           password: dbConfig.password,
           database: dbConfig.database,
-          entities: [AdminUser, AdminRole, User, Loan, PendingLogin, BackupCode, Transaction, SupportTicket, ChatMessage, TicketHistory, SupportAgent, Department, AdminActivityLog, SecuritySettings],
+          entities: [
+            AdminUser,
+            AdminRole,
+            User,
+            Loan,
+            PendingLogin,
+            BackupCode,
+            Transaction,
+            SupportTicket,
+            ChatMessage,
+            TicketHistory,
+            SupportAgent,
+            Department,
+            AdminActivityLog,
+            SecuritySettings,
+          ],
           synchronize: false,
           logging: configService.get('NODE_ENV') === 'development',
         };
       },
     }),
     LoggerModule,
+    RedisModule,
     AuthModule,
     UsersModule,
     LoansModule,

@@ -12,3 +12,5 @@ services:
           type: web
           name: rim-admin-backend
           property: port
+      - key: REDIS_URL
+        value: redis://red-d4bmvo0dl3ps73b0jjs0:6379
