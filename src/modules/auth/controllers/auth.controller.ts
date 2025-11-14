@@ -15,7 +15,7 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AuthService } from '../services/auth.service';
-import { LoginDto, LoginResultDto, SetupRequestDto, SetupVerifyDto, BackupCodeConsumeDto, BackupCodesResponseDto, VerifyCodeDto, SetupStartResponseDto } from '../dto';
+import { LoginDto, LoginResultDto, SetupRequestDto, SetupVerifyDto, BackupCodeConsumeDto, BackupCodesResponseDto, VerifyCodeDto, SetupStartResponseDto, TokenResponseDto, RefreshTokenDto } from '../dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
@@ -71,8 +71,29 @@ export class AuthController {
   @Post('2fa/backup-codes/consume')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Consume a backup code for MFA' })
-  async consumeBackupCode(@Body() body: BackupCodeConsumeDto): Promise<{ token: string; expiresIn: string }> {
+  @ApiResponse({
+    status: 200,
+    description: 'Authentication successful',
+    type: TokenResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid backup code' })
+  async consumeBackupCode(@Body() body: BackupCodeConsumeDto): Promise<TokenResponseDto> {
     return this.authService.consumeBackupCode(body.temporaryHash, body.code);
+  }
+
+  @Public()
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Refresh access token using refresh token' })
+  @ApiBody({ type: RefreshTokenDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Token refreshed successfully',
+    type: TokenResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Invalid refresh token' })
+  async refreshToken(@Body() body: RefreshTokenDto): Promise<TokenResponseDto> {
+    return this.authService.refreshToken(body.refreshToken);
   }
 
   @Get('me')

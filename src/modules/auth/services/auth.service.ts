@@ -164,7 +164,7 @@ export class AuthService {
   async completeMfaLogin(
     temporaryHash: string,
     code: string,
-  ): Promise<{ token: string; expiresIn: string }> {
+  ): Promise<{ token: string; refreshToken: string; expiresIn: string }> {
     const session =
       await this.pendingLoginRepository.findActiveByHash(temporaryHash);
     if (!session || session.type !== 'mfa') {
@@ -186,22 +186,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid code');
     }
     await this.pendingLoginRepository.markUsed(session.id);
-    const payload = {
-      sub: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-    };
-    const token = await this.jwtService.signAsync(payload, {
-      secret: this.jwtConfiguration.secret,
-      expiresIn: this.jwtConfiguration.expiresIn,
-    });
-    return { token, expiresIn: this.jwtConfiguration.expiresIn };
+    return this.generateTokens(user);
   }
 
-  async start2faSetup(
-    sessionToken: string,
-  ): Promise<{ otpauthUrl: string; manualKey: string; qrCodeDataUrl: string; backupCodes: string[] }> {
+  async start2faSetup(sessionToken: string): Promise<{
+    otpauthUrl: string;
+    manualKey: string;
+    qrCodeDataUrl: string;
+    backupCodes: string[];
+  }> {
     const session =
       await this.pendingLoginRepository.findActiveByHash(sessionToken);
     if (!session || session.type !== 'setup') {
@@ -288,7 +281,7 @@ export class AuthService {
   async consumeBackupCode(
     temporaryHash: string,
     code: string,
-  ): Promise<{ token: string; expiresIn: string }> {
+  ): Promise<{ token: string; refreshToken: string; expiresIn: string }> {
     const session =
       await this.pendingLoginRepository.findActiveByHash(temporaryHash);
     if (!session || session.type !== 'mfa') {
@@ -319,16 +312,69 @@ export class AuthService {
     }
     await this.backupCodeRepository.markUsed(matched.id);
     await this.pendingLoginRepository.markUsed(session.id);
+    return this.generateTokens(user);
+  }
+
+  private async generateTokens(
+    user: AdminUser,
+  ): Promise<{ token: string; refreshToken: string; expiresIn: string }> {
     const payload = {
       sub: user.id,
       email: user.email,
       username: user.username,
       role: user.role,
     };
-    const token = await this.jwtService.signAsync(payload, {
-      secret: this.jwtConfiguration.secret,
+
+    const [token, refreshToken] = await Promise.all([
+      this.jwtService.signAsync(payload, {
+        secret: this.jwtConfiguration.secret,
+        expiresIn: this.jwtConfiguration.expiresIn,
+      }),
+      this.jwtService.signAsync(payload, {
+        secret: this.jwtConfiguration.refreshSecret,
+        expiresIn: this.jwtConfiguration.refreshExpiresIn,
+      }),
+    ]);
+
+    // Store refresh token in database
+    await this.adminUserRepository.updateRefreshToken(user.id, refreshToken);
+
+    return {
+      token,
+      refreshToken,
       expiresIn: this.jwtConfiguration.expiresIn,
-    });
-    return { token, expiresIn: this.jwtConfiguration.expiresIn };
+    };
+  }
+
+  async refreshToken(
+    refreshToken: string,
+  ): Promise<{ token: string; refreshToken: string; expiresIn: string }> {
+    try {
+      const payload = await this.jwtService.verifyAsync(refreshToken, {
+        secret: this.jwtConfiguration.refreshSecret,
+      });
+
+      const user = await this.adminUserRepository.findById(payload.sub);
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      if (user.status !== AdminUserStatus.ACTIVE) {
+        throw new UnauthorizedException('Account is not active');
+      }
+
+      // Verify the refresh token matches the one stored in the database
+      if (user.refreshToken !== refreshToken) {
+        throw new UnauthorizedException('Invalid refresh token');
+      }
+
+      // Generate new tokens
+      return this.generateTokens(user);
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Invalid refresh token');
+    }
   }
 }

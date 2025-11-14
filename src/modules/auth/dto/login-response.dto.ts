@@ -21,6 +21,9 @@ export class LoginResultDto {
   @ApiPropertyOptional({ description: 'JWT access token' })
   token?: string;
 
+  @ApiPropertyOptional({ description: 'JWT refresh token' })
+  refreshToken?: string;
+
   @ApiPropertyOptional({ description: 'Login step status', enum: ['MFA_REQUIRED', 'MFA_SETUP_REQUIRED'] })
   status?: 'MFA_REQUIRED' | 'MFA_SETUP_REQUIRED';
 
@@ -34,3 +37,13 @@ export class LoginResultDto {
   expiresAt?: Date;
 }
 
+export class TokenResponseDto {
+  @ApiProperty({ description: 'JWT access token' })
+  token: string;
+
+  @ApiProperty({ description: 'JWT refresh token' })
+  refreshToken: string;
+
+  @ApiProperty({ description: 'Token expiration time (e.g., "1h")' })
+  expiresIn: string;
+}
