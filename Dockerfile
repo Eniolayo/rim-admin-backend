@@ -62,8 +62,14 @@ COPY --from=builder /app/src/database/migrations ./src/database/migrations
 COPY --from=builder /app/src/database/seeds ./src/database/seeds
 COPY --from=builder /app/src/database/data-source.ts ./src/database/data-source.ts
 
-# Copy entity files needed by seeds
+# Copy entity files needed by seeds and migrations
+COPY --from=builder /app/src/entities ./src/entities
+
+# Copy module files needed by seeds
 COPY --from=builder /app/src/modules ./src/modules
+
+# Copy config files needed by seeds and data-source
+COPY --from=builder /app/src/config ./src/config
 
 # Copy tsconfig for ts-node to work
 COPY tsconfig.json ./
