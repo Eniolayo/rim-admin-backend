@@ -1,41 +1,87 @@
-FROM node:20-alpine AS base
+# Use an official Node.js runtime as the base image
+FROM node:20-alpine AS builder
 
-# Install dependencies only when needed
-FROM base AS deps
-RUN apk add --no-cache libc6-compat
+# Set working directory
+WORKDIR /app
+
+# Copy package files first for caching
+COPY package*.json ./
+
+RUN npm install -g @nestjs/cli
+
+# Install dependencies
+RUN npm ci --legacy-peer-deps
+
+# Copy rest of the code
+COPY . .
+
+# Build NestJS app
+RUN npm run build
+
+# ---- Development stage ----
+FROM node:20-alpine AS development
+
 WORKDIR /app
 
 # Copy package files
-COPY package.json package-lock.json* ./
-RUN npm ci
+COPY package*.json ./
 
-# Rebuild the source code only when needed
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
+# Install all dependencies (including dev dependencies)
+RUN npm ci --legacy-peer-deps
+
+# Copy source code
 COPY . .
 
-# Generate Prisma Client (if using Prisma) or build NestJS
-RUN npm run build
+# Copy certificates directory (if it exists)
+COPY certs ./certs
 
-# Production image, copy all the files and run nest
-FROM base AS runner
-WORKDIR /app
-
-ENV NODE_ENV=production
-
-RUN addgroup --system --gid 1001 nodejs
-RUN adduser --system --uid 1001 nestjs
-
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package.json ./package.json
-
-USER nestjs
-
+# Expose the port your Nest app runs on
 EXPOSE 3000
 
-ENV PORT=3000
+# Start command with hot reload using nodemon
+CMD ["npm", "run", "start:dev:nodemon"]
 
-CMD ["node", "dist/main"]
+# ---- Production stage ----
+FROM node:20-alpine AS production
 
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install production dependencies
+RUN npm ci --omit=dev --legacy-peer-deps
+
+# IMPORTANT: Install TypeORM CLI and ts-node for migrations
+# These are needed to run migrations in production
+RUN npm install typeorm ts-node tsconfig-paths @types/node typescript --legacy-peer-deps
+
+# Copy compiled code from builder
+COPY --from=builder /app/dist ./dist
+
+# IMPORTANT: Copy source files needed for migrations and seeds
+# TypeORM migrations and seeds need the original .ts files
+COPY --from=builder /app/src/database/migrations ./src/database/migrations
+COPY --from=builder /app/src/database/seeds ./src/database/seeds
+COPY --from=builder /app/src/database/data-source.ts ./src/database/data-source.ts
+
+# Copy entity files needed by seeds
+COPY --from=builder /app/src/modules ./src/modules
+
+# Copy CLI scripts (2FA init, TOTP generator)
+COPY --from=builder /app/src/scripts ./src/scripts
+
+# Copy tsconfig for ts-node to work
+COPY tsconfig.json ./
+
+# Copy certificates directory (if it exists)
+COPY certs ./certs
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Expose the port your Nest app runs on
+EXPOSE 3000
+
+# Start command
+CMD ["node", "dist/main.js"]
