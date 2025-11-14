@@ -32,9 +32,6 @@ RUN npm ci --legacy-peer-deps
 # Copy source code
 COPY . .
 
-# Copy certificates directory (if it exists)
-COPY certs ./certs
-
 # Expose the port your Nest app runs on
 EXPOSE 3000
 
@@ -74,8 +71,6 @@ COPY --from=builder /app/src/scripts ./src/scripts
 # Copy tsconfig for ts-node to work
 COPY tsconfig.json ./
 
-# Copy certificates directory (if it exists)
-COPY certs ./certs
 
 # Create logs directory
 RUN mkdir -p logs
