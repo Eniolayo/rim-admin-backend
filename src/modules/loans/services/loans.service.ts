@@ -22,6 +22,7 @@ import {
 import { PaginatedResponseDto } from '../../users/dto/paginated-response.dto';
 import { Loan, LoanStatus, Network } from '../../../entities/loan.entity';
 import { AdminUser } from '../../../entities/admin-user.entity';
+import { User } from '../../../entities/user.entity';
 import { LoansCacheService } from './loans-cache.service';
 
 @Injectable()
@@ -31,6 +32,8 @@ export class LoansService {
     private readonly userRepository: UserRepository,
     @InjectRepository(Loan)
     private readonly repository: Repository<Loan>,
+    @InjectRepository(User)
+    private readonly userEntityRepository: Repository<User>,
     private readonly cacheService: LoansCacheService,
     private readonly logger: Logger,
   ) {}
@@ -43,7 +46,10 @@ export class LoansService {
     this.logger.log('Creating new loan');
 
     try {
-      const user = await this.userRepository.findById(createLoanDto.userId);
+      // Load user without loans relation to avoid relationship sync issues
+      const user = await this.userEntityRepository.findOne({
+        where: { userId: createLoanDto.userId },
+      });
       if (!user) {
         throw new NotFoundException(
           `User with ID ${createLoanDto.userId} not found`,
@@ -73,27 +79,32 @@ export class LoansService {
       const amountDue = createLoanDto.amount + interest;
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + createLoanDto.repaymentPeriod);
+      this.logger.log(`User business ID: ${user.userId}, User UUID: ${user.id}`);
 
       const loan = this.repository.create({
-        ...createLoanDto,
         loanId,
-        userId: user.id,
-        userPhone: user.phone, // Now guaranteed to be non-null
+        userId: user.id,  // Use UUID (primary key), not the business userId field
+        amount: createLoanDto.amount,
+        network: createLoanDto.network,
+        interestRate: createLoanDto.interestRate,
+        repaymentPeriod: createLoanDto.repaymentPeriod,
+        userPhone: user.phone,
         userEmail: user.email,
         amountDue,
         amountPaid: 0,
         outstandingAmount: amountDue,
         dueDate,
         status: LoanStatus.PENDING,
-        metadata: createLoanDto.metadata || null, // Changed from {} to null
+        metadata: createLoanDto.metadata || null,
       });
 
       const savedLoan = await this.loanRepository.save(loan);
 
-      // Update user's total loans count
+      // Update user's total loans count using update to avoid relationship sync
       const userLoans = await this.loanRepository.findByUserId(user.id);
-      user.totalLoans = userLoans.length;
-      await this.userRepository.save(user);
+      await this.userRepository.update(user.id, {
+        totalLoans: userLoans.length,
+      });
 
       this.logger.log({ loanId: savedLoan.loanId }, 'Loan created');
 
@@ -163,6 +174,17 @@ export class LoansService {
           );
           throw new BadRequestException(
             'Loan could not be created due to invalid user reference.',
+          );
+        }
+        
+        if (dbError.code === '22P02') {
+          // Invalid UUID format
+          this.logger.error(
+            { error: dbError.message, userId: createLoanDto.userId },
+            'Error creating loan: invalid UUID format',
+          );
+          throw new BadRequestException(
+            'Loan could not be created due to invalid user ID format. Please ensure the user exists and try again.',
           );
         }
       }
@@ -401,6 +423,11 @@ export class LoansService {
   ): Promise<LoanResponseDto> {
     this.logger.log(`Approving loan: ${approveLoanDto.loanId}`);
 
+    // Validate admin user
+    if (!adminUser || !adminUser.id) {
+      throw new BadRequestException('Admin user information is required to approve a loan');
+    }
+
     const loan = await this.loanRepository.findByLoanId(approveLoanDto.loanId);
 
     if (!loan) {
@@ -448,6 +475,11 @@ export class LoansService {
     adminUser: AdminUser,
   ): Promise<LoanResponseDto> {
     this.logger.log(`Rejecting loan: ${rejectLoanDto.loanId}`);
+
+    // Validate admin user
+    if (!adminUser || !adminUser.id) {
+      throw new BadRequestException('Admin user information is required to reject a loan');
+    }
 
     const loan = await this.loanRepository.findByLoanId(rejectLoanDto.loanId);
 

@@ -44,7 +44,7 @@ import { AdminUser } from '../../../entities/admin-user.entity';
 export class LoansController {
   constructor(private readonly loansService: LoansService) {}
 
-  @Post()
+  @Post('create')
   @Permissions('loans', 'write')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Create a new loan' })
