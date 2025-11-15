@@ -14,6 +14,10 @@ export class PendingLoginRepository {
     return this.repository.findOne({ where: { hash, used: false } });
   }
 
+  async findByHash(hash: string): Promise<PendingLogin | null> {
+    return this.repository.findOne({ where: { hash } });
+  }
+
   async findActiveByUserAndType(
     adminUserId: string,
     type: 'mfa' | 'setup',

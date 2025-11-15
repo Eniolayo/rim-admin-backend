@@ -8,13 +8,16 @@ import {
   Delete,
   Query,
   UseGuards,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
+  ApiExtraModels,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { UsersService } from '../services/users.service';
 import {
@@ -22,6 +25,8 @@ import {
   UpdateUserDto,
   UserResponseDto,
   UserStatsDto,
+  UserQueryDto,
+  PaginatedResponseDto,
 } from '../dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { UserStatus } from '../../../entities/user.entity';
@@ -30,6 +35,7 @@ import { UserStatus } from '../../../entities/user.entity';
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
+@ApiExtraModels(PaginatedResponseDto, UserResponseDto)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
@@ -45,21 +51,30 @@ export class UsersController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all users' })
-  @ApiQuery({ name: 'status', required: false, enum: UserStatus })
-  @ApiQuery({ name: 'repaymentStatus', required: false })
-  @ApiQuery({ name: 'search', required: false })
+  @ApiOperation({ summary: 'Get all users with pagination and filters' })
   @ApiResponse({
     status: 200,
-    description: 'List of users',
-    type: [UserResponseDto],
+    description: 'Paginated list of users',
+    schema: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: getSchemaPath(UserResponseDto) },
+        },
+        total: { type: 'number' },
+        page: { type: 'number' },
+        limit: { type: 'number' },
+        totalPages: { type: 'number' },
+      },
+    },
   })
-  findAll(
-    @Query('status') status?: string,
-    @Query('repaymentStatus') repaymentStatus?: string,
-    @Query('search') search?: string,
-  ): Promise<UserResponseDto[]> {
-    return this.usersService.findAll({ status, repaymentStatus, search });
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid query parameters',
+  })
+  findAll(@Query() queryDto: UserQueryDto): Promise<PaginatedResponseDto<UserResponseDto>> {
+    return this.usersService.findAll(queryDto);
   }
 
   @Get('stats')
@@ -71,6 +86,50 @@ export class UsersController {
   })
   getStats(): Promise<UserStatsDto> {
     return this.usersService.getStats();
+  }
+
+  @Get('export')
+  @ApiOperation({ summary: 'Export users to CSV' })
+  @ApiResponse({
+    status: 200,
+    description: 'CSV file with user data',
+    content: {
+      'text/csv': {
+        schema: {
+          type: 'string',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid query parameters',
+  })
+  async export(@Res() res: Response, @Query() queryDto: UserQueryDto): Promise<void> {
+    const users = await this.usersService.exportUsers(queryDto);
+    
+    // CSV headers
+    const headers = 'User ID,Phone,Email,Credit Score,Total Repaid,Status,Repayment Status,Credit Limit\n';
+    
+    // Format rows
+    const rows = users
+      .map(
+        (user) =>
+          `${user.userId || ''},${user.phone || ''},${user.email || ''},${user.creditScore || 0},${user.totalRepaid || 0},${user.status || ''},${user.repaymentStatus || ''},${user.creditLimit || 0}`,
+      )
+      .join('\n');
+    
+    const csv = headers + rows;
+    
+    // Set response headers
+    const timestamp = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="users-export-${timestamp}.csv"`,
+    );
+    
+    res.send(csv);
   }
 
   @Get(':id')

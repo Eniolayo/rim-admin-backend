@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
+import { Logger } from 'nestjs-pino';
 import { UserRepository } from '../repositories/user.repository';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
@@ -7,21 +12,24 @@ import {
   UpdateUserDto,
   UserResponseDto,
   UserStatsDto,
+  UserQueryDto,
+  PaginatedResponseDto,
 } from '../dto';
 import {
   User,
   UserStatus,
   RepaymentStatus,
 } from '../../../entities/user.entity';
+import { UsersCacheService } from './users-cache.service';
 
 @Injectable()
 export class UsersService {
-  private readonly logger = new Logger(UsersService.name);
-
   constructor(
     private readonly userRepository: UserRepository,
     @InjectRepository(User)
     private readonly repository: Repository<User>,
+    private readonly cacheService: UsersCacheService,
+    private readonly logger: Logger,
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
@@ -43,27 +51,147 @@ export class UsersService {
     });
 
     const savedUser = await this.userRepository.save(user);
-    this.logger.log(`User created: ${savedUser.userId}`);
+    this.logger.log({ userId: savedUser.userId }, 'User created');
+
+    // Invalidate cache - list and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateUserList(),
+        this.cacheService.invalidateUserStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Error invalidating cache after user creation',
+      );
+    }
 
     return this.mapToResponse(savedUser);
   }
 
-  async findAll(filters?: {
-    status?: string;
-    repaymentStatus?: string;
-    search?: string;
-  }): Promise<UserResponseDto[]> {
+  async findAll(
+    queryDto?: UserQueryDto,
+  ): Promise<PaginatedResponseDto<UserResponseDto>> {
     this.logger.debug('Finding all users');
 
-    const users = filters
-      ? await this.userRepository.findWithFilters(filters)
-      : await this.userRepository.findAll();
+    try {
+      // Validate credit score range
+      if (
+        queryDto?.minCreditScore !== undefined &&
+        queryDto?.maxCreditScore !== undefined &&
+        queryDto.minCreditScore > queryDto.maxCreditScore
+      ) {
+        throw new BadRequestException(
+          'minCreditScore cannot be greater than maxCreditScore',
+        );
+      }
 
-    return users.map((user) => this.mapToResponse(user));
+      // Try to get from cache
+      try {
+        const cached = await this.cacheService.getUserList(queryDto);
+        if (cached) {
+          return cached;
+        }
+      } catch (error) {
+        // Cache error - fallback to database
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Cache error, falling back to database',
+        );
+      }
+
+      // If no filters provided, use default pagination
+      if (!queryDto || Object.keys(queryDto).length === 0) {
+        const [users, total] = await this.userRepository.findWithFilters({
+          page: 1,
+          limit: 10,
+        });
+
+        const result = {
+          data: users.map((user) => this.mapToResponse(user)),
+          total,
+          page: 1,
+          limit: 10,
+          totalPages: Math.ceil(total / 10),
+        };
+
+        // Cache the result
+        try {
+          await this.cacheService.setUserList(undefined, result);
+        } catch (error) {
+          // Cache error - continue without caching
+          this.logger.warn(
+            { error: error instanceof Error ? error.message : String(error) },
+            'Error caching user list',
+          );
+        }
+
+        return result;
+      }
+
+      const page = queryDto.page ?? 1;
+      const limit = queryDto.limit ?? 10;
+
+      const [users, total] = await this.userRepository.findWithFilters({
+        status: queryDto.status,
+        repaymentStatus: queryDto.repaymentStatus,
+        search: queryDto.search,
+        minCreditScore: queryDto.minCreditScore,
+        maxCreditScore: queryDto.maxCreditScore,
+        page,
+        limit,
+      });
+
+      const result = {
+        data: users.map((user) => this.mapToResponse(user)),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+
+      // Cache the result
+      try {
+        await this.cacheService.setUserList(queryDto, result);
+      } catch (error) {
+        // Cache error - continue without caching
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Error caching user list',
+        );
+      }
+
+      return result;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      this.logger.error(
+        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        'Error finding users',
+      );
+      throw new BadRequestException('Error retrieving users');
+    }
   }
 
   async findOne(id: string): Promise<UserResponseDto> {
-    this.logger.debug(`Finding user: ${id}`);
+    this.logger.debug({ userId: id }, 'Finding user');
+
+    // Try to get from cache
+    try {
+      const cached = await this.cacheService.getUser(id);
+      if (cached) {
+        return cached;
+      }
+    } catch (error) {
+      // Cache error - fallback to database
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), userId: id },
+        'Cache error, falling back to database',
+      );
+    }
 
     const user = await this.userRepository.findById(id);
 
@@ -71,14 +199,27 @@ export class UsersService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    return this.mapToResponse(user);
+    const result = this.mapToResponse(user);
+
+    // Cache the result
+    try {
+      await this.cacheService.setUser(id, result);
+    } catch (error) {
+      // Cache error - continue without caching
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), userId: id },
+        'Error caching user',
+      );
+    }
+
+    return result;
   }
 
   async update(
     id: string,
     updateUserDto: UpdateUserDto,
   ): Promise<UserResponseDto> {
-    this.logger.log(`Updating user: ${id}`);
+    this.logger.log({ userId: id }, 'Updating user');
 
     const user = await this.userRepository.findById(id);
 
@@ -89,13 +230,28 @@ export class UsersService {
     Object.assign(user, updateUserDto);
     const updatedUser = await this.userRepository.save(user);
 
-    this.logger.log(`User updated: ${updatedUser.userId}`);
+    this.logger.log({ userId: updatedUser.userId }, 'User updated');
+
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateUser(id),
+        this.cacheService.invalidateUserList(),
+        this.cacheService.invalidateUserStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), userId: id },
+        'Error invalidating cache after user update',
+      );
+    }
 
     return this.mapToResponse(updatedUser);
   }
 
   async updateStatus(id: string, status: UserStatus): Promise<UserResponseDto> {
-    this.logger.log(`Updating user status: ${id} to ${status}`);
+    this.logger.log({ userId: id, status }, 'Updating user status');
 
     const user = await this.userRepository.findById(id);
 
@@ -106,6 +262,21 @@ export class UsersService {
     user.status = status;
     const updatedUser = await this.userRepository.save(user);
 
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateUser(id),
+        this.cacheService.invalidateUserList(),
+        this.cacheService.invalidateUserStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), userId: id },
+        'Error invalidating cache after status update',
+      );
+    }
+
     return this.mapToResponse(updatedUser);
   }
 
@@ -114,7 +285,7 @@ export class UsersService {
     creditLimit: number,
     autoLimitEnabled?: boolean,
   ): Promise<UserResponseDto> {
-    this.logger.log(`Updating credit limit for user: ${id}`);
+    this.logger.log({ userId: id, creditLimit, autoLimitEnabled }, 'Updating credit limit for user');
 
     const user = await this.userRepository.findById(id);
 
@@ -122,11 +293,35 @@ export class UsersService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    user.creditLimit = creditLimit;
-    if (autoLimitEnabled !== undefined) {
-      user.autoLimitEnabled = autoLimitEnabled;
+    // If enabling auto-limit, calculate based on credit score
+    if (autoLimitEnabled === true) {
+      user.creditLimit = this.calculateCreditLimitByScore(user.creditScore);
+      user.autoLimitEnabled = true;
+    } else if (autoLimitEnabled === false) {
+      // If disabling auto-limit, use the provided credit limit
+      user.creditLimit = creditLimit;
+      user.autoLimitEnabled = false;
+    } else {
+      // If autoLimitEnabled is undefined, just update the credit limit
+      user.creditLimit = creditLimit;
     }
+
     const updatedUser = await this.userRepository.save(user);
+
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateUser(id),
+        this.cacheService.invalidateUserList(),
+        this.cacheService.invalidateUserStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), userId: id },
+        'Error invalidating cache after credit limit update',
+      );
+    }
 
     return this.mapToResponse(updatedUser);
   }
@@ -136,7 +331,8 @@ export class UsersService {
     status: UserStatus,
   ): Promise<UserResponseDto[]> {
     this.logger.log(
-      `Bulk updating status for ${ids.length} users to ${status}`,
+      { userIds: ids, status, count: ids.length },
+      'Bulk updating status for users',
     );
 
     const users = await Promise.all(
@@ -150,11 +346,26 @@ export class UsersService {
       }),
     );
 
+    // Invalidate cache - all affected users, list, and stats changed
+    try {
+      await Promise.all([
+        ...ids.map((id) => this.cacheService.invalidateUser(id)),
+        this.cacheService.invalidateUserList(),
+        this.cacheService.invalidateUserStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), userIds: ids },
+        'Error invalidating cache after bulk status update',
+      );
+    }
+
     return users.map((user) => this.mapToResponse(user));
   }
 
   async remove(id: string): Promise<void> {
-    this.logger.log(`Removing user: ${id}`);
+    this.logger.log({ userId: id }, 'Removing user');
 
     const user = await this.userRepository.findById(id);
 
@@ -163,12 +374,93 @@ export class UsersService {
     }
 
     await this.userRepository.delete(id);
+
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateUser(id),
+        this.cacheService.invalidateUserList(),
+        this.cacheService.invalidateUserStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), userId: id },
+        'Error invalidating cache after user deletion',
+      );
+    }
   }
 
   async getStats(): Promise<UserStatsDto> {
     this.logger.debug('Getting user stats');
 
-    return this.userRepository.getStats();
+    // Try to get from cache
+    try {
+      const cached = await this.cacheService.getUserStats();
+      if (cached) {
+        return cached;
+      }
+    } catch (error) {
+      // Cache error - fallback to database
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Cache error, falling back to database',
+      );
+    }
+
+    const stats = await this.userRepository.getStats();
+
+    // Cache the result
+    try {
+      await this.cacheService.setUserStats(stats);
+    } catch (error) {
+      // Cache error - continue without caching
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'Error caching user stats',
+      );
+    }
+
+    return stats;
+  }
+
+  async exportUsers(queryDto?: UserQueryDto): Promise<UserResponseDto[]> {
+    this.logger.debug('Exporting users');
+
+    try {
+      // Validate credit score range (same as findAll)
+      if (
+        queryDto?.minCreditScore !== undefined &&
+        queryDto?.maxCreditScore !== undefined &&
+        queryDto.minCreditScore > queryDto.maxCreditScore
+      ) {
+        throw new BadRequestException(
+          'minCreditScore cannot be greater than maxCreditScore',
+        );
+      }
+
+      // Get all matching users without pagination
+      const users = await this.userRepository.findAllForExport({
+        status: queryDto?.status,
+        repaymentStatus: queryDto?.repaymentStatus,
+        search: queryDto?.search,
+        minCreditScore: queryDto?.minCreditScore,
+        maxCreditScore: queryDto?.maxCreditScore,
+      });
+
+      // Map users to response DTOs (includes effective credit limit calculation)
+      return users.map((user) => this.mapToResponse(user));
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      this.logger.error(
+        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        'Error exporting users',
+      );
+      throw new BadRequestException('Error exporting users');
+    }
   }
 
   private async generateUserId(): Promise<string> {
@@ -181,6 +473,13 @@ export class UsersService {
   }
 
   private mapToResponse(user: User): UserResponseDto {
+    // Calculate credit limit based on autoLimitEnabled
+    let effectiveCreditLimit = Number(user.creditLimit);
+    
+    if (user.autoLimitEnabled) {
+      effectiveCreditLimit = this.calculateCreditLimitByScore(user.creditScore);
+    }
+
     return {
       id: user.id,
       userId: user.userId,
@@ -190,11 +489,24 @@ export class UsersService {
       repaymentStatus: user.repaymentStatus,
       totalRepaid: Number(user.totalRepaid),
       status: user.status,
-      creditLimit: Number(user.creditLimit),
+      creditLimit: effectiveCreditLimit,
       autoLimitEnabled: user.autoLimitEnabled,
       totalLoans: user.totalLoans,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
+  }
+
+  private calculateCreditLimitByScore(creditScore: number): number {
+    if (creditScore < 200) {
+      return 500;
+    } else if (creditScore >= 200 && creditScore < 500) {
+      return 1000;
+    } else if (creditScore >= 500 && creditScore < 1000) {
+      return 2000;
+    } else {
+      // creditScore >= 1000
+      return 3000;
+    }
   }
 }

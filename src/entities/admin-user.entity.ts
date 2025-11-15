@@ -57,7 +57,7 @@ export class AdminUser {
   @Column({ type: 'varchar', length: 255, nullable: true })
   otpSecret: string | null;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'text', nullable: true })
   @Exclude()
   refreshToken: string | null;
 

@@ -165,8 +165,22 @@ export class AuthService {
     temporaryHash: string,
     code: string,
   ): Promise<{ token: string; refreshToken: string; expiresIn: string }> {
-    const session =
-      await this.pendingLoginRepository.findActiveByHash(temporaryHash);
+    // Check if session exists at all (even if used)
+    const anySession = await this.pendingLoginRepository.findByHash(temporaryHash);
+
+    if (!anySession) {
+      throw new BadRequestException('Session not found');
+    }
+
+    if (anySession.used) {
+      throw new BadRequestException('Session already used');
+    }
+
+    if (anySession.expiresAt.getTime() < Date.now()) {
+      throw new BadRequestException('Session expired');
+    }
+
+    const session = await this.pendingLoginRepository.findActiveByHash(temporaryHash);
     if (!session || session.type !== 'mfa') {
       throw new BadRequestException('Invalid session');
     }

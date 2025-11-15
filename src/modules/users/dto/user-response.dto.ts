@@ -54,4 +54,10 @@ export class UserStatsDto {
 
   @ApiProperty({ description: 'New users count' })
   newUsers: number;
+
+  @ApiProperty({ description: 'Total users count' })
+  totalUsers: number;
+
+  @ApiProperty({ description: 'Average credit score of all users' })
+  avgCreditScore: number;
 }
