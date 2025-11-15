@@ -148,6 +148,22 @@ export class LoanRepository {
       .getMany();
   }
 
+  async getPerformanceReportData(
+    startDate: Date,
+    endDate: Date,
+  ): Promise<Loan[]> {
+    // Set endDate to end of day to include all loans on that day
+    const endOfDay = new Date(endDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    return this.repository
+      .createQueryBuilder('loan')
+      .where('loan.createdAt >= :startDate', { startDate })
+      .andWhere('loan.createdAt <= :endDate', { endDate: endOfDay })
+      .orderBy('loan.createdAt', 'DESC')
+      .getMany();
+  }
+
   async save(loan: Loan): Promise<Loan> {
     return this.repository.save(loan);
   }

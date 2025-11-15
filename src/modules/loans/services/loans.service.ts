@@ -18,6 +18,7 @@ import {
   LoanResponseDto,
   LoanStatsDto,
   LoanQueryDto,
+  PerformanceReportResponseDto,
 } from '../dto';
 import { PaginatedResponseDto } from '../../users/dto/paginated-response.dto';
 import { Loan, LoanStatus, Network } from '../../../entities/loan.entity';
@@ -424,8 +425,29 @@ export class LoansService {
     this.logger.log(`Approving loan: ${approveLoanDto.loanId}`);
 
     // Validate admin user
-    if (!adminUser || !adminUser.id) {
+    if (!adminUser) {
+      this.logger.error('Admin user is null or undefined');
       throw new BadRequestException('Admin user information is required to approve a loan');
+    }
+
+    // Validate and extract admin user ID
+    const adminUserId = adminUser?.id;
+    
+    // Log admin user details for debugging
+    this.logger.debug({
+      adminUserId: adminUserId,
+      adminUserEmail: adminUser?.email,
+      adminUserUsername: adminUser?.username,
+      adminUserKeys: adminUser ? Object.keys(adminUser) : [],
+    }, 'Admin user attempting to approve loan');
+
+    if (!adminUserId || typeof adminUserId !== 'string') {
+      this.logger.error({
+        adminUserId: adminUserId,
+        adminUserType: typeof adminUser,
+        adminUser: adminUser ? JSON.stringify(adminUser, null, 2) : null,
+      }, 'Admin user ID is missing or invalid');
+      throw new BadRequestException('Admin user ID is required to approve a loan');
     }
 
     const loan = await this.loanRepository.findByLoanId(approveLoanDto.loanId);
@@ -442,13 +464,28 @@ export class LoansService {
 
     loan.status = LoanStatus.APPROVED;
     loan.approvedAt = new Date();
-    loan.approvedBy = adminUser.id;
+    loan.approvedBy = adminUserId;
     loan.updatedAt = new Date();
 
     // Simulate telco API integration
     loan.telcoReference = `TELCO-REF-${Date.now()}`;
 
-    const updatedLoan = await this.loanRepository.save(loan);
+    await this.loanRepository.save(loan);
+
+    // Reload the loan to ensure all fields are correctly persisted
+    const updatedLoan = await this.loanRepository.findByLoanId(approveLoanDto.loanId);
+
+    if (!updatedLoan) {
+      throw new NotFoundException(
+        `Loan with ID ${approveLoanDto.loanId} not found after approval`,
+      );
+    }
+
+    // Log to verify the approvedBy was set
+    this.logger.debug({
+      loanId: updatedLoan.loanId,
+      approvedBy: updatedLoan.approvedBy,
+    }, 'Loan approved with approvedBy set');
 
     this.logger.log({ loanId: updatedLoan.loanId }, 'Loan approved');
 
@@ -477,8 +514,29 @@ export class LoansService {
     this.logger.log(`Rejecting loan: ${rejectLoanDto.loanId}`);
 
     // Validate admin user
-    if (!adminUser || !adminUser.id) {
+    if (!adminUser) {
+      this.logger.error('Admin user is null or undefined');
       throw new BadRequestException('Admin user information is required to reject a loan');
+    }
+
+    // Validate and extract admin user ID
+    const adminUserId = adminUser?.id;
+    
+    // Log admin user details for debugging
+    this.logger.debug({
+      adminUserId: adminUserId,
+      adminUserEmail: adminUser?.email,
+      adminUserUsername: adminUser?.username,
+      adminUserKeys: adminUser ? Object.keys(adminUser) : [],
+    }, 'Admin user attempting to reject loan');
+
+    if (!adminUserId || typeof adminUserId !== 'string') {
+      this.logger.error({
+        adminUserId: adminUserId,
+        adminUserType: typeof adminUser,
+        adminUser: adminUser ? JSON.stringify(adminUser, null, 2) : null,
+      }, 'Admin user ID is missing or invalid');
+      throw new BadRequestException('Admin user ID is required to reject a loan');
     }
 
     const loan = await this.loanRepository.findByLoanId(rejectLoanDto.loanId);
@@ -495,11 +553,26 @@ export class LoansService {
 
     loan.status = LoanStatus.REJECTED;
     loan.rejectedAt = new Date();
-    loan.rejectedBy = adminUser.id;
+    loan.rejectedBy = adminUserId;
     loan.rejectionReason = rejectLoanDto.reason;
     loan.updatedAt = new Date();
 
-    const updatedLoan = await this.loanRepository.save(loan);
+    await this.loanRepository.save(loan);
+
+    // Reload the loan to ensure all fields are correctly persisted
+    const updatedLoan = await this.loanRepository.findByLoanId(rejectLoanDto.loanId);
+
+    if (!updatedLoan) {
+      throw new NotFoundException(
+        `Loan with ID ${rejectLoanDto.loanId} not found after rejection`,
+      );
+    }
+
+    // Log to verify the rejectedBy was set
+    this.logger.debug({
+      loanId: updatedLoan.loanId,
+      rejectedBy: updatedLoan.rejectedBy,
+    }, 'Loan rejected with rejectedBy set');
 
     this.logger.log({ loanId: updatedLoan.loanId }, 'Loan rejected');
 
@@ -666,6 +739,168 @@ export class LoansService {
         'Error getting loan stats',
       );
       throw new BadRequestException('Error retrieving loan statistics');
+    }
+  }
+
+  async getPerformanceReport(
+    startDate: string,
+    endDate: string,
+  ): Promise<PerformanceReportResponseDto> {
+    this.logger.debug({ startDate, endDate }, 'Getting performance report');
+
+    try {
+      // Parse dates
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      // Validate dates
+      if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        throw new BadRequestException('Invalid date format');
+      }
+
+      if (start > end) {
+        throw new BadRequestException('Start date must be before or equal to end date');
+      }
+
+      // Get loans in date range
+      const loans = await this.loanRepository.getPerformanceReportData(start, end);
+
+      // Calculate totals
+      const totalLoans = loans.length;
+
+      const totalDisbursed = loans
+        .filter((loan) =>
+          [
+            LoanStatus.DISBURSED,
+            LoanStatus.REPAYING,
+            LoanStatus.COMPLETED,
+            LoanStatus.DEFAULTED,
+          ].includes(loan.status),
+        )
+        .reduce((sum, loan) => sum + Number(loan.amount), 0);
+
+      const totalRepaid = loans.reduce(
+        (sum, loan) => sum + Number(loan.amountPaid),
+        0,
+      );
+
+      const totalOutstanding = loans.reduce(
+        (sum, loan) => sum + Number(loan.outstandingAmount),
+        0,
+      );
+
+      // Calculate rates
+      const completedLoans = loans.filter(
+        (loan) => loan.status === LoanStatus.COMPLETED,
+      );
+      const defaultedLoans = loans.filter(
+        (loan) => loan.status === LoanStatus.DEFAULTED,
+      );
+
+      const defaultRate =
+        completedLoans.length + defaultedLoans.length > 0
+          ? (defaultedLoans.length /
+              (completedLoans.length + defaultedLoans.length)) *
+            100
+          : 0;
+
+      const repaymentRate =
+        totalDisbursed > 0 ? (totalRepaid / totalDisbursed) * 100 : 0;
+
+      // Calculate average loan amount
+      const averageLoanAmount =
+        totalLoans > 0
+          ? loans.reduce((sum, loan) => sum + Number(loan.amount), 0) / totalLoans
+          : 0;
+
+      // Calculate average repayment time (from disbursedAt to completedAt for completed loans)
+      const completedLoansWithDates = completedLoans.filter(
+        (loan) => loan.disbursedAt && loan.completedAt,
+      );
+      const averageRepaymentTime =
+        completedLoansWithDates.length > 0
+          ? completedLoansWithDates.reduce((sum, loan) => {
+              const disbursed = new Date(loan.disbursedAt!);
+              const completed = new Date(loan.completedAt!);
+              const days = Math.ceil(
+                (completed.getTime() - disbursed.getTime()) /
+                  (1000 * 60 * 60 * 24),
+              );
+              return sum + days;
+            }, 0) / completedLoansWithDates.length
+          : 0;
+
+      // Network breakdown
+      const networkBreakdown = Object.values(Network).map((network) => {
+        const networkLoans = loans.filter((loan) => loan.network === network);
+        const networkCompleted = networkLoans.filter(
+          (loan) => loan.status === LoanStatus.COMPLETED,
+        );
+        const networkDefaulted = networkLoans.filter(
+          (loan) => loan.status === LoanStatus.DEFAULTED,
+        );
+        const networkDefaultRate =
+          networkCompleted.length + networkDefaulted.length > 0
+            ? (networkDefaulted.length /
+                (networkCompleted.length + networkDefaulted.length)) *
+              100
+            : 0;
+
+        return {
+          network,
+          count: networkLoans.length,
+          amount: networkLoans.reduce(
+            (sum, loan) => sum + Number(loan.amount),
+            0,
+          ),
+          defaultRate: networkDefaultRate,
+        };
+      });
+
+      // Status breakdown
+      const statusBreakdown = Object.values(LoanStatus).map((status) => {
+        const statusLoans = loans.filter((loan) => loan.status === status);
+        return {
+          status,
+          count: statusLoans.length,
+          amount: statusLoans.reduce(
+            (sum, loan) => sum + Number(loan.amount),
+            0,
+          ),
+        };
+      });
+
+      return {
+        period: {
+          start: startDate,
+          end: endDate,
+        },
+        totalLoans,
+        totalDisbursed,
+        totalRepaid,
+        totalOutstanding,
+        defaultRate,
+        repaymentRate,
+        averageLoanAmount,
+        averageRepaymentTime,
+        networkBreakdown,
+        statusBreakdown,
+      };
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      this.logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          startDate,
+          endDate,
+        },
+        'Error getting performance report',
+      );
+      throw new BadRequestException('Error retrieving performance report');
     }
   }
 

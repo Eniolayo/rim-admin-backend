@@ -28,6 +28,8 @@ import {
   LoanResponseDto,
   LoanStatsDto,
   LoanQueryDto,
+  PerformanceReportQueryDto,
+  PerformanceReportResponseDto,
 } from '../dto';
 import { PaginatedResponseDto } from '../../users/dto/paginated-response.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
@@ -40,7 +42,11 @@ import { AdminUser } from '../../../entities/admin-user.entity';
 @Controller('loans')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
-@ApiExtraModels(PaginatedResponseDto, LoanResponseDto)
+@ApiExtraModels(
+  PaginatedResponseDto,
+  LoanResponseDto,
+  PerformanceReportResponseDto,
+)
 export class LoansController {
   constructor(private readonly loansService: LoansService) {}
 
@@ -111,6 +117,109 @@ export class LoansController {
   })
   getStats(): Promise<LoanStatsDto> {
     return this.loansService.getStats();
+  }
+
+  @Get('report')
+  @Permissions('loans', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @ApiOperation({ summary: 'Get loan performance report' })
+  @ApiResponse({
+    status: 200,
+    description: 'Loan performance report',
+    type: PerformanceReportResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid date format or date range',
+  })
+  getPerformanceReport(
+    @Query() queryDto: PerformanceReportQueryDto,
+  ): Promise<PerformanceReportResponseDto> {
+    return this.loansService.getPerformanceReport(
+      queryDto.startDate,
+      queryDto.endDate,
+    );
+  }
+
+  @Get('report/export')
+  @Permissions('loans', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @ApiOperation({ summary: 'Export loan performance report to CSV' })
+  @ApiResponse({
+    status: 200,
+    description: 'CSV file with performance report data',
+    content: {
+      'text/csv': {
+        schema: {
+          type: 'string',
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid date format or date range',
+  })
+  async exportPerformanceReport(
+    @Res() res: Response,
+    @Query() queryDto: PerformanceReportQueryDto,
+  ): Promise<void> {
+    const report = await this.loansService.getPerformanceReport(
+      queryDto.startDate,
+      queryDto.endDate,
+    );
+
+    // Build CSV content
+    const lines: string[] = [];
+
+    // Header
+    lines.push('Loan Performance Report');
+    lines.push(`Period: ${report.period.start} to ${report.period.end}`);
+    lines.push('');
+
+    // Summary Metrics
+    lines.push('SUMMARY METRICS');
+    lines.push('Metric,Value');
+    lines.push(`Total Loans,${report.totalLoans}`);
+    lines.push(`Total Disbursed,${report.totalDisbursed}`);
+    lines.push(`Total Repaid,${report.totalRepaid}`);
+    lines.push(`Total Outstanding,${report.totalOutstanding}`);
+    lines.push(`Default Rate,${report.defaultRate.toFixed(2)}%`);
+    lines.push(`Repayment Rate,${report.repaymentRate.toFixed(2)}%`);
+    lines.push(`Average Loan Amount,${report.averageLoanAmount.toFixed(2)}`);
+    lines.push(`Average Repayment Time,${report.averageRepaymentTime.toFixed(2)} days`);
+    lines.push('');
+
+    // Network Breakdown
+    lines.push('NETWORK BREAKDOWN');
+    lines.push('Network,Count,Amount,Default Rate (%)');
+    report.networkBreakdown.forEach((network) => {
+      lines.push(
+        `${network.network},${network.count},${network.amount.toFixed(2)},${network.defaultRate.toFixed(2)}`,
+      );
+    });
+    lines.push('');
+
+    // Status Breakdown
+    lines.push('STATUS BREAKDOWN');
+    lines.push('Status,Count,Amount');
+    report.statusBreakdown.forEach((status) => {
+      lines.push(
+        `${status.status},${status.count},${status.amount.toFixed(2)}`,
+      );
+    });
+
+    const csv = lines.join('\n');
+
+    // Set response headers
+    const timestamp = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="loan-performance-report-${timestamp}.csv"`,
+    );
+
+    res.send(csv);
   }
 
   @Get('export')

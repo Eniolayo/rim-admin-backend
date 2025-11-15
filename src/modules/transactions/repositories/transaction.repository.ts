@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { InjectRepository } from '@nestjs/typeorm'
 import { Repository } from 'typeorm'
 import { Transaction, TransactionType, TransactionStatus, PaymentMethod } from '../../../entities/transaction.entity'
+import { TransactionStatsDto } from '../dto/transaction-response.dto'
 
 @Injectable()
 export class TransactionRepository {
@@ -28,7 +29,9 @@ export class TransactionRepository {
     dateTo?: Date
     amountMin?: number
     amountMax?: number
-  }): Promise<Transaction[]> {
+    page?: number
+    limit?: number
+  }): Promise<[Transaction[], number]> {
     const qb = this.repository.createQueryBuilder('t')
 
     if (filters.type) qb.andWhere('t.type = :type', { type: filters.type })
@@ -47,7 +50,14 @@ export class TransactionRepository {
       qb.andWhere('t.amount BETWEEN :min AND :max', { min: filters.amountMin, max: filters.amountMax })
     }
 
-    return qb.leftJoinAndSelect('t.user', 'user').leftJoinAndSelect('t.reconciler', 'reconciler').orderBy('t.createdAt', 'DESC').getMany()
+    // Apply pagination
+    const page = filters.page ?? 1
+    const limit = filters.limit ?? 10
+    const skip = (page - 1) * limit
+
+    qb.skip(skip).take(limit)
+
+    return qb.leftJoinAndSelect('t.user', 'user').leftJoinAndSelect('t.reconciler', 'reconciler').orderBy('t.createdAt', 'DESC').getManyAndCount()
   }
 
   async save(entity: Transaction): Promise<Transaction> {
@@ -62,17 +72,7 @@ export class TransactionRepository {
     }
   }
 
-  async stats(): Promise<{
-    totalTransactions: number
-    totalAmount: number
-    airtimeTransactions: number
-    repaymentTransactions: number
-    completedTransactions: number
-    pendingTransactions: number
-    failedTransactions: number
-    todayTransactions: number
-    todayAmount: number
-  }> {
+  async stats(): Promise<TransactionStatsDto> {
     const transactions = await this.repository.find()
     const today = new Date()
     today.setHours(0, 0, 0, 0)

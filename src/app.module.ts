@@ -35,6 +35,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { LoansModule } from './modules/loans/loans.module';
 import { TransactionsModule } from './modules/transactions/transactions.module';
 import { SupportModule } from './modules/support/support.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { RedisModule } from './common/redis/redis.module';
 
 @Module({
@@ -144,6 +145,7 @@ import { RedisModule } from './common/redis/redis.module';
     TransactionsModule,
     SupportModule,
     AdminModule,
+    DashboardModule,
   ],
   controllers: [AppController],
   providers: [
