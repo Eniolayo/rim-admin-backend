@@ -20,7 +20,7 @@ interface UserSeedData {
 
 const rolesToSeed: RoleSeedData[] = [
   {
-    name: 'Super Admin',
+    name: 'super_Admin',
     description: 'Full system access with all permissions',
     permissions: [
       { resource: 'users', actions: ['read', 'write', 'delete'] },
@@ -32,16 +32,7 @@ const rolesToSeed: RoleSeedData[] = [
     ],
   },
   {
-    name: 'Support Agent',
-    description: 'Can manage support tickets and view user information',
-    permissions: [
-      { resource: 'users', actions: ['read'] },
-      { resource: 'support', actions: ['read', 'write'] },
-      { resource: 'loans', actions: ['read'] },
-    ],
-  },
-  {
-    name: 'Finance Officer',
+    name: 'Admin',
     description: 'Can manage loans, transactions, and financial reports',
     permissions: [
       { resource: 'loans', actions: ['read', 'write'] },
@@ -49,28 +40,22 @@ const rolesToSeed: RoleSeedData[] = [
       { resource: 'users', actions: ['read'] },
     ],
   },
+  {
+    name: 'moderator',
+    description: 'Can manage support tickets and view user information',
+    permissions: [
+      { resource: 'users', actions: ['read'] },
+      { resource: 'support', actions: ['read', 'write'] },
+      { resource: 'loans', actions: ['read'] },
+    ],
+  },
 ];
 
 const usersToSeed: UserSeedData[] = [
   {
-    username: 'superadmin',
-    email: 'superadmin@test.com',
-    roleName: 'Super Admin',
-  },
-  {
-    username: 'support1',
-    email: 'support1@test.com',
-    roleName: 'Support Agent',
-  },
-  {
-    username: 'support2',
-    email: 'support2@test.com',
-    roleName: 'Support Agent',
-  },
-  {
-    username: 'finance',
-    email: 'finance@test.com',
-    roleName: 'Finance Officer',
+    username: 'superadmin33',
+    email: 'superadmin33@test33.com',
+    roleName: 'super_Admin',
   },
 ];
 
@@ -192,6 +177,10 @@ async function runSeed(): Promise<void> {
     console.log('==========================================');
     console.log('✅ Seeding completed successfully!');
     console.log('==========================================');
+    console.log('\n📝 Seeded Admin Roles:');
+    rolesToSeed.forEach((role) => {
+      console.log(`   - ${role.name}`);
+    });
     console.log('\n📝 Seeded Admin Users:');
     usersToSeed.forEach((user) => {
       console.log(`   - ${user.email} (${user.username}) - ${user.roleName}`);

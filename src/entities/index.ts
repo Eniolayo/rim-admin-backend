@@ -1,5 +1,6 @@
 export * from './admin-user.entity';
 export * from './admin-role.entity';
+export * from './admin-invitation.entity';
 export * from './user.entity';
 export * from './loan.entity';
 export * from './pending-login.entity';

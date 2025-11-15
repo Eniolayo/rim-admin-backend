@@ -14,7 +14,8 @@ import {
   ApiOperation,
   ApiResponse,
   ApiBearerAuth,
-  ApiQuery,
+  ApiExtraModels,
+  getSchemaPath,
 } from '@nestjs/swagger';
 import { LoansService } from '../services/loans.service';
 import {
@@ -24,16 +25,18 @@ import {
   RejectLoanDto,
   LoanResponseDto,
   LoanStatsDto,
+  LoanQueryDto,
 } from '../dto';
+import { PaginatedResponseDto } from '../../users/dto/paginated-response.dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AdminUser } from '../../../entities/admin-user.entity';
-import { LoanStatus, Network } from '../../../entities/loan.entity';
 
 @ApiTags('loans')
 @Controller('loans')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
+@ApiExtraModels(PaginatedResponseDto, LoanResponseDto)
 export class LoansController {
   constructor(private readonly loansService: LoansService) {}
 
@@ -52,21 +55,32 @@ export class LoansController {
   }
 
   @Get()
-  @ApiOperation({ summary: 'Get all loans' })
-  @ApiQuery({ name: 'status', required: false, enum: LoanStatus })
-  @ApiQuery({ name: 'network', required: false, enum: Network })
-  @ApiQuery({ name: 'search', required: false })
+  @ApiOperation({ summary: 'Get all loans with pagination and filters' })
   @ApiResponse({
     status: 200,
-    description: 'List of loans',
-    type: [LoanResponseDto],
+    description: 'Paginated list of loans',
+    schema: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'array',
+          items: { $ref: getSchemaPath(LoanResponseDto) },
+        },
+        total: { type: 'number' },
+        page: { type: 'number' },
+        limit: { type: 'number' },
+        totalPages: { type: 'number' },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid query parameters',
   })
   findAll(
-    @Query('status') status?: LoanStatus,
-    @Query('network') network?: Network,
-    @Query('search') search?: string,
-  ): Promise<LoanResponseDto[]> {
-    return this.loansService.findAll({ status, network, search });
+    @Query() queryDto: LoanQueryDto,
+  ): Promise<PaginatedResponseDto<LoanResponseDto>> {
+    return this.loansService.findAll(queryDto);
   }
 
   @Get('stats')

@@ -45,7 +45,9 @@ export class LoanRepository {
     search?: string;
     dateRange?: { from: Date; to: Date };
     amountRange?: { min: number; max: number };
-  }): Promise<Loan[]> {
+    page?: number;
+    limit?: number;
+  }): Promise<[Loan[], number]> {
     const queryBuilder = this.repository.createQueryBuilder('loan');
 
     if (filters.status) {
@@ -81,12 +83,19 @@ export class LoanRepository {
       });
     }
 
+    // Apply pagination
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 10;
+    const skip = (page - 1) * limit;
+
+    queryBuilder.skip(skip).take(limit);
+
     return queryBuilder
       .leftJoinAndSelect('loan.user', 'user')
       .leftJoinAndSelect('loan.approver', 'approver')
       .leftJoinAndSelect('loan.rejector', 'rejector')
       .orderBy('loan.createdAt', 'DESC')
-      .getMany();
+      .getManyAndCount();
   }
 
   async save(loan: Loan): Promise<Loan> {

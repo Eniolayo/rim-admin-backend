@@ -2,8 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  Logger,
 } from '@nestjs/common';
+import { Logger } from 'nestjs-pino';
 import { LoanRepository } from '../repositories/loan.repository';
 import { UserRepository } from '../../users/repositories/user.repository';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -15,19 +15,22 @@ import {
   RejectLoanDto,
   LoanResponseDto,
   LoanStatsDto,
+  LoanQueryDto,
 } from '../dto';
+import { PaginatedResponseDto } from '../../users/dto/paginated-response.dto';
 import { Loan, LoanStatus, Network } from '../../../entities/loan.entity';
 import { AdminUser } from '../../../entities/admin-user.entity';
+import { LoansCacheService } from './loans-cache.service';
 
 @Injectable()
 export class LoansService {
-  private readonly logger = new Logger(LoansService.name);
-
   constructor(
     private readonly loanRepository: LoanRepository,
     private readonly userRepository: UserRepository,
     @InjectRepository(Loan)
     private readonly repository: Repository<Loan>,
+    private readonly cacheService: LoansCacheService,
+    private readonly logger: Logger,
   ) {}
 
   async create(
@@ -74,37 +77,175 @@ export class LoansService {
     user.totalLoans = userLoans.length;
     await this.userRepository.save(user);
 
-    this.logger.log(`Loan created: ${savedLoan.loanId}`);
+    this.logger.log({ loanId: savedLoan.loanId }, 'Loan created');
+
+    // Invalidate cache - list and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateLoanList(),
+        this.cacheService.invalidateLoanStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), loanId: savedLoan.loanId },
+        'Error invalidating cache after loan creation',
+      );
+    }
 
     return this.mapToResponse(savedLoan);
   }
 
-  async findAll(filters?: {
-    status?: LoanStatus;
-    network?: Network;
-    search?: string;
-    dateRange?: { from: Date; to: Date };
-    amountRange?: { min: number; max: number };
-  }): Promise<LoanResponseDto[]> {
+  async findAll(
+    queryDto?: LoanQueryDto,
+  ): Promise<PaginatedResponseDto<LoanResponseDto>> {
     this.logger.debug('Finding all loans');
 
-    const loans = filters
-      ? await this.loanRepository.findWithFilters(filters)
-      : await this.loanRepository.findAll();
+    try {
+      // Validate query parameters
+      if (queryDto?.page !== undefined && queryDto.page < 1) {
+        throw new BadRequestException('Page number must be at least 1');
+      }
+      if (queryDto?.limit !== undefined && (queryDto.limit < 1 || queryDto.limit > 100)) {
+        throw new BadRequestException('Limit must be between 1 and 100');
+      }
 
-    return loans.map((loan) => this.mapToResponse(loan));
+      // Try to get from cache
+      try {
+        const cached = await this.cacheService.getLoanList(queryDto);
+        if (cached) {
+          return cached;
+        }
+      } catch (error) {
+        // Cache error - fallback to database
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Cache error, falling back to database',
+        );
+      }
+
+      // If no filters provided, use default pagination
+      if (!queryDto || Object.keys(queryDto).length === 0) {
+        const [loans, total] = await this.loanRepository.findWithFilters({
+          page: 1,
+          limit: 10,
+        });
+
+        const result = {
+          data: loans.map((loan) => this.mapToResponse(loan)),
+          total,
+          page: 1,
+          limit: 10,
+          totalPages: Math.ceil(total / 10),
+        };
+
+        // Cache the result
+        try {
+          await this.cacheService.setLoanList(undefined, result);
+        } catch (error) {
+          // Cache error - continue without caching
+          this.logger.warn(
+            { error: error instanceof Error ? error.message : String(error) },
+            'Error caching loan list',
+          );
+        }
+
+        return result;
+      }
+
+      const page = queryDto.page ?? 1;
+      const limit = queryDto.limit ?? 10;
+
+      const [loans, total] = await this.loanRepository.findWithFilters({
+        status: queryDto.status,
+        network: queryDto.network,
+        search: queryDto.search,
+        page,
+        limit,
+      });
+
+      const result = {
+        data: loans.map((loan) => this.mapToResponse(loan)),
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      };
+
+      // Cache the result
+      try {
+        await this.cacheService.setLoanList(queryDto, result);
+      } catch (error) {
+        // Cache error - continue without caching
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Error caching loan list',
+        );
+      }
+
+      return result;
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      this.logger.error(
+        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        'Error finding loans',
+      );
+      throw new BadRequestException('Error retrieving loans');
+    }
   }
 
   async findOne(id: string): Promise<LoanResponseDto> {
-    this.logger.debug(`Finding loan: ${id}`);
+    this.logger.debug({ loanId: id }, 'Finding loan');
 
-    const loan = await this.loanRepository.findById(id);
+    try {
+      // Try to get from cache
+      try {
+        const cached = await this.cacheService.getLoan(id);
+        if (cached) {
+          return cached;
+        }
+      } catch (error) {
+        // Cache error - fallback to database
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error), loanId: id },
+          'Cache error, falling back to database',
+        );
+      }
 
-    if (!loan) {
-      throw new NotFoundException(`Loan with ID ${id} not found`);
+      const loan = await this.loanRepository.findById(id);
+
+      if (!loan) {
+        throw new NotFoundException(`Loan with ID ${id} not found`);
+      }
+
+      const result = this.mapToResponse(loan);
+
+      // Cache the result
+      try {
+        await this.cacheService.setLoan(id, result);
+      } catch (error) {
+        // Cache error - continue without caching
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error), loanId: id },
+          'Error caching loan',
+        );
+      }
+
+      return result;
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+
+      this.logger.error(
+        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, loanId: id },
+        'Error finding loan',
+      );
+      throw new BadRequestException('Error retrieving loan');
     }
-
-    return this.mapToResponse(loan);
   }
 
   async update(
@@ -131,7 +272,22 @@ export class LoansService {
     Object.assign(loan, updateLoanDto);
     const updatedLoan = await this.loanRepository.save(loan);
 
-    this.logger.log(`Loan updated: ${updatedLoan.loanId}`);
+    this.logger.log({ loanId: updatedLoan.loanId }, 'Loan updated');
+
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateLoan(id),
+        this.cacheService.invalidateLoanList(),
+        this.cacheService.invalidateLoanStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), loanId: id },
+        'Error invalidating cache after loan update',
+      );
+    }
 
     return this.mapToResponse(updatedLoan);
   }
@@ -164,7 +320,22 @@ export class LoansService {
 
     const updatedLoan = await this.loanRepository.save(loan);
 
-    this.logger.log(`Loan approved: ${updatedLoan.loanId}`);
+    this.logger.log({ loanId: updatedLoan.loanId }, 'Loan approved');
+
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateLoan(loan.id),
+        this.cacheService.invalidateLoanList(),
+        this.cacheService.invalidateLoanStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), loanId: approveLoanDto.loanId },
+        'Error invalidating cache after loan approval',
+      );
+    }
 
     return this.mapToResponse(updatedLoan);
   }
@@ -195,7 +366,22 @@ export class LoansService {
 
     const updatedLoan = await this.loanRepository.save(loan);
 
-    this.logger.log(`Loan rejected: ${updatedLoan.loanId}`);
+    this.logger.log({ loanId: updatedLoan.loanId }, 'Loan rejected');
+
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateLoan(loan.id),
+        this.cacheService.invalidateLoanList(),
+        this.cacheService.invalidateLoanStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), loanId: rejectLoanDto.loanId },
+        'Error invalidating cache after loan rejection',
+      );
+    }
 
     return this.mapToResponse(updatedLoan);
   }
@@ -233,7 +419,22 @@ export class LoansService {
 
     const updatedLoan = await this.loanRepository.save(loan);
 
-    this.logger.log(`Loan disbursed: ${updatedLoan.loanId}`);
+    this.logger.log({ loanId: updatedLoan.loanId }, 'Loan disbursed');
+
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateLoan(loan.id),
+        this.cacheService.invalidateLoanList(),
+        this.cacheService.invalidateLoanStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), loanId: id },
+        'Error invalidating cache after loan disbursement',
+      );
+    }
 
     return this.mapToResponse(updatedLoan);
   }
@@ -248,12 +449,62 @@ export class LoansService {
     }
 
     await this.loanRepository.delete(id);
+
+    // Invalidate cache - user, list, and stats changed
+    try {
+      await Promise.all([
+        this.cacheService.invalidateLoan(id),
+        this.cacheService.invalidateLoanList(),
+        this.cacheService.invalidateLoanStats(),
+      ]);
+    } catch (error) {
+      // Cache invalidation error - log but don't fail
+      this.logger.warn(
+        { error: error instanceof Error ? error.message : String(error), loanId: id },
+        'Error invalidating cache after loan deletion',
+      );
+    }
   }
 
   async getStats(): Promise<LoanStatsDto> {
     this.logger.debug('Getting loan stats');
 
-    return this.loanRepository.getStats();
+    try {
+      // Try to get from cache
+      try {
+        const cached = await this.cacheService.getLoanStats();
+        if (cached) {
+          return cached;
+        }
+      } catch (error) {
+        // Cache error - fallback to database
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Cache error, falling back to database',
+        );
+      }
+
+      const stats = await this.loanRepository.getStats();
+
+      // Cache the result
+      try {
+        await this.cacheService.setLoanStats(stats);
+      } catch (error) {
+        // Cache error - continue without caching
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error) },
+          'Error caching loan stats',
+        );
+      }
+
+      return stats;
+    } catch (error) {
+      this.logger.error(
+        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        'Error getting loan stats',
+      );
+      throw new BadRequestException('Error retrieving loan statistics');
+    }
   }
 
   private async generateLoanId(): Promise<string> {

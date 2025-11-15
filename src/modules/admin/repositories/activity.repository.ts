@@ -24,5 +24,26 @@ export class AdminActivityLogRepository {
     }
     return qb.orderBy('log.timestamp', 'DESC').getMany()
   }
+
+  async create(data: {
+    adminId: string
+    adminName: string
+    action: string
+    resource: string
+    resourceId?: string | null
+    details?: Record<string, unknown> | null
+    ipAddress?: string | null
+  }): Promise<AdminActivityLog> {
+    const log = this.repository.create({
+      adminId: data.adminId,
+      adminName: data.adminName,
+      action: data.action,
+      resource: data.resource,
+      resourceId: data.resourceId ?? null,
+      details: data.details ?? null,
+      ipAddress: data.ipAddress ?? null,
+    })
+    return this.repository.save(log)
+  }
 }
 

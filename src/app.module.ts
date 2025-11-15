@@ -14,6 +14,7 @@ import redisConfig from './config/redis.config';
 import {
   AdminUser,
   AdminRole,
+  AdminInvitation,
   User,
   Loan,
   PendingLogin,
@@ -96,6 +97,7 @@ import { RedisModule } from './common/redis/redis.module';
           entities: [
             AdminUser,
             AdminRole,
+            AdminInvitation,
             User,
             Loan,
             PendingLogin,
