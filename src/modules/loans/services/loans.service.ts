@@ -2,12 +2,14 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  InternalServerErrorException,
 } from '@nestjs/common';
 import { Logger } from 'nestjs-pino';
 import { LoanRepository } from '../repositories/loan.repository';
 import { UserRepository } from '../../users/repositories/user.repository';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { QueryFailedError } from 'typeorm';
 import {
   CreateLoanDto,
   UpdateLoanDto,
@@ -40,60 +42,161 @@ export class LoansService {
   ): Promise<LoanResponseDto> {
     this.logger.log('Creating new loan');
 
-    const user = await this.userRepository.findById(createLoanDto.userId);
-    if (!user) {
-      throw new NotFoundException(
-        `User with ID ${createLoanDto.userId} not found`,
-      );
-    }
-
-    // Generate loanId
-    const loanId = await this.generateLoanId();
-
-    // Calculate amounts
-    const interest = (createLoanDto.amount * createLoanDto.interestRate) / 100;
-    const amountDue = createLoanDto.amount + interest;
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + createLoanDto.repaymentPeriod);
-
-    const loan = this.repository.create({
-      ...createLoanDto,
-      loanId,
-      userId: user.id,
-      userPhone: user.phone,
-      userEmail: user.email,
-      amountDue,
-      amountPaid: 0,
-      outstandingAmount: amountDue,
-      dueDate,
-      status: LoanStatus.PENDING,
-      metadata: createLoanDto.metadata || {},
-    });
-
-    const savedLoan = await this.loanRepository.save(loan);
-
-    // Update user's total loans count
-    const userLoans = await this.loanRepository.findByUserId(user.id);
-    user.totalLoans = userLoans.length;
-    await this.userRepository.save(user);
-
-    this.logger.log({ loanId: savedLoan.loanId }, 'Loan created');
-
-    // Invalidate cache - list and stats changed
     try {
-      await Promise.all([
-        this.cacheService.invalidateLoanList(),
-        this.cacheService.invalidateLoanStats(),
-      ]);
+      const user = await this.userRepository.findById(createLoanDto.userId);
+      if (!user) {
+        throw new NotFoundException(
+          `User with ID ${createLoanDto.userId} not found`,
+        );
+      }
+
+      // Validate user has required fields
+      if (!user.phone) {
+        throw new BadRequestException(
+          `User with ID ${createLoanDto.userId} is missing required phone number. Please update the user profile first.`,
+        );
+      }
+
+      // Validate loan amount does not exceed user's credit limit
+      const userCreditLimit = Number(user.creditLimit);
+      if (createLoanDto.amount > userCreditLimit) {
+        throw new BadRequestException(
+          `Loan amount exceeds user's credit limit. Maximum allowed: ${userCreditLimit}, Requested: ${createLoanDto.amount}`,
+        );
+      }
+
+      // Generate loanId
+      const loanId = await this.generateLoanId();
+
+      // Calculate amounts
+      const interest = (createLoanDto.amount * createLoanDto.interestRate) / 100;
+      const amountDue = createLoanDto.amount + interest;
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + createLoanDto.repaymentPeriod);
+
+      const loan = this.repository.create({
+        ...createLoanDto,
+        loanId,
+        userId: user.id,
+        userPhone: user.phone, // Now guaranteed to be non-null
+        userEmail: user.email,
+        amountDue,
+        amountPaid: 0,
+        outstandingAmount: amountDue,
+        dueDate,
+        status: LoanStatus.PENDING,
+        metadata: createLoanDto.metadata || null, // Changed from {} to null
+      });
+
+      const savedLoan = await this.loanRepository.save(loan);
+
+      // Update user's total loans count
+      const userLoans = await this.loanRepository.findByUserId(user.id);
+      user.totalLoans = userLoans.length;
+      await this.userRepository.save(user);
+
+      this.logger.log({ loanId: savedLoan.loanId }, 'Loan created');
+
+      // Invalidate cache - list and stats changed
+      try {
+        await Promise.all([
+          this.cacheService.invalidateLoanList(),
+          this.cacheService.invalidateLoanStats(),
+        ]);
+      } catch (error) {
+        // Cache invalidation error - log but don't fail
+        this.logger.warn(
+          { error: error instanceof Error ? error.message : String(error), loanId: savedLoan.loanId },
+          'Error invalidating cache after loan creation',
+        );
+      }
+
+      return this.mapToResponse(savedLoan);
     } catch (error) {
-      // Cache invalidation error - log but don't fail
-      this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), loanId: savedLoan.loanId },
-        'Error invalidating cache after loan creation',
+      // Re-throw HTTP exceptions (BadRequestException, NotFoundException, etc.)
+      if (
+        error instanceof BadRequestException ||
+        error instanceof NotFoundException
+      ) {
+        throw error;
+      }
+
+      // Handle database constraint violations from TypeORM
+      if (error instanceof QueryFailedError) {
+        const dbError = error as QueryFailedError & { code?: string; message?: string };
+        
+        // Log the actual database error for debugging
+        this.logger.error(
+          { 
+            error: dbError.message, 
+            code: dbError.code,
+            userId: createLoanDto.userId 
+          },
+          'Database error creating loan',
+        );
+        
+        if (dbError.code === '23502') {
+          // NOT NULL constraint violation - extract which column is missing
+          const columnMatch = dbError.message?.match(/column "(\w+)"/i);
+          const columnName = columnMatch ? columnMatch[1] : 'unknown';
+          
+          throw new BadRequestException(
+            `Loan could not be created due to missing required field: ${columnName}. Please check the user data and try again.`,
+          );
+        }
+        
+        if (dbError.code === '23505') {
+          // Unique constraint violation
+          this.logger.error(
+            { error: dbError.message, userId: createLoanDto.userId },
+            'Error creating loan: duplicate loanId or constraint violation',
+          );
+          throw new BadRequestException(
+            'Loan could not be created due to a duplicate entry. Please try again.',
+          );
+        }
+        if (dbError.code === '23503') {
+          // Foreign key constraint violation
+          this.logger.error(
+            { error: dbError.message, userId: createLoanDto.userId },
+            'Error creating loan: foreign key constraint violation',
+          );
+          throw new BadRequestException(
+            'Loan could not be created due to invalid user reference.',
+          );
+        }
+      }
+
+      // Handle other database errors
+      if (error && typeof error === 'object' && 'code' in error) {
+        const dbError = error as { code: string; message?: string };
+        if (['23505', '23503', '23502'].includes(dbError.code)) {
+          this.logger.error(
+            { error: dbError.message || 'Database constraint violation', userId: createLoanDto.userId },
+            'Error creating loan: database constraint violation',
+          );
+          throw new BadRequestException(
+            'Loan could not be created due to a database constraint violation. Please check the provided data.',
+          );
+        }
+      }
+
+      // Log unexpected errors with full context
+      this.logger.error(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          userId: createLoanDto.userId,
+          amount: createLoanDto.amount,
+        },
+        'Unexpected error creating loan',
+      );
+
+      // Throw internal server error for unexpected exceptions
+      throw new InternalServerErrorException(
+        'An unexpected error occurred while creating the loan. Please try again later or contact support.',
       );
     }
-
-    return this.mapToResponse(savedLoan);
   }
 
   async findAll(
@@ -463,6 +566,33 @@ export class LoansService {
         { error: error instanceof Error ? error.message : String(error), loanId: id },
         'Error invalidating cache after loan deletion',
       );
+    }
+  }
+
+  async exportLoans(queryDto?: LoanQueryDto): Promise<LoanResponseDto[]> {
+    this.logger.debug('Exporting loans');
+
+    try {
+      // Validate query parameters (same as findAll, but no pagination validation)
+      // No caching - directly query database
+
+      const loans = await this.loanRepository.findAllForExport({
+        status: queryDto?.status,
+        network: queryDto?.network,
+        search: queryDto?.search,
+      });
+
+      return loans.map((loan) => this.mapToResponse(loan));
+    } catch (error) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      this.logger.error(
+        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        'Error exporting loans',
+      );
+      throw new BadRequestException('Error exporting loans');
     }
   }
 

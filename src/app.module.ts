@@ -48,11 +48,31 @@ import { RedisModule } from './common/redis/redis.module';
           .valid('development', 'production', 'test', 'staging')
           .default('development'),
         PORT: Joi.number().port().default(3000),
-        DB_HOST: Joi.string().required(),
-        DB_PORT: Joi.number().port().required(),
-        DB_USERNAME: Joi.string().required(),
-        DB_PASSWORD: Joi.string().required(),
-        DB_NAME: Joi.string().required(),
+        DB_HOST: Joi.string().when('NODE_ENV', {
+          is: 'test',
+          then: Joi.string().default('localhost'),
+          otherwise: Joi.string().required(),
+        }),
+        DB_PORT: Joi.number().port().when('NODE_ENV', {
+          is: 'test',
+          then: Joi.number().port().default(5432),
+          otherwise: Joi.number().port().required(),
+        }),
+        DB_USERNAME: Joi.string().when('NODE_ENV', {
+          is: 'test',
+          then: Joi.string().default('postgres'),
+          otherwise: Joi.string().required(),
+        }),
+        DB_PASSWORD: Joi.string().when('NODE_ENV', {
+          is: 'test',
+          then: Joi.string().default('postgres'),
+          otherwise: Joi.string().required(),
+        }),
+        DB_NAME: Joi.string().when('NODE_ENV', {
+          is: 'test',
+          then: Joi.string().default('rim_db_test'),
+          otherwise: Joi.string().required(),
+        }),
         JWT_SECRET: Joi.string().min(32).required(),
         JWT_EXPIRATION: Joi.string().required(),
         JWT_REFRESH_SECRET: Joi.string().min(32).required(),

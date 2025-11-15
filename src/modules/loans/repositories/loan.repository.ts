@@ -98,6 +98,56 @@ export class LoanRepository {
       .getManyAndCount();
   }
 
+  async findAllForExport(filters: {
+    status?: LoanStatus;
+    network?: Network;
+    search?: string;
+    dateRange?: { from: Date; to: Date };
+    amountRange?: { min: number; max: number };
+  }): Promise<Loan[]> {
+    const queryBuilder = this.repository.createQueryBuilder('loan');
+
+    if (filters.status) {
+      queryBuilder.andWhere('loan.status = :status', {
+        status: filters.status,
+      });
+    }
+
+    if (filters.network) {
+      queryBuilder.andWhere('loan.network = :network', {
+        network: filters.network,
+      });
+    }
+
+    if (filters.search) {
+      queryBuilder.andWhere(
+        '(loan.loanId LIKE :search OR loan.userPhone LIKE :search OR loan.userEmail LIKE :search)',
+        { search: `%${filters.search}%` },
+      );
+    }
+
+    if (filters.dateRange) {
+      queryBuilder.andWhere('loan.createdAt BETWEEN :from AND :to', {
+        from: filters.dateRange.from,
+        to: filters.dateRange.to,
+      });
+    }
+
+    if (filters.amountRange) {
+      queryBuilder.andWhere('loan.amount BETWEEN :min AND :max', {
+        min: filters.amountRange.min,
+        max: filters.amountRange.max,
+      });
+    }
+
+    return queryBuilder
+      .leftJoinAndSelect('loan.user', 'user')
+      .leftJoinAndSelect('loan.approver', 'approver')
+      .leftJoinAndSelect('loan.rejector', 'rejector')
+      .orderBy('loan.createdAt', 'DESC')
+      .getMany();
+  }
+
   async save(loan: Loan): Promise<Loan> {
     return this.repository.save(loan);
   }
