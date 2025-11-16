@@ -36,8 +36,12 @@ export class AdminInvitation {
   @Column({
     type: 'enum',
     enum: AdminInvitationRole,
+    nullable: true,
   })
-  role: AdminInvitationRole;
+  role: AdminInvitationRole | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  roleId: string | null;
 
   @Column({ type: 'varchar', length: 255, unique: true })
   inviteToken: string;
@@ -68,4 +72,3 @@ export class AdminInvitation {
   @JoinColumn({ name: 'invitedBy' })
   inviter: AdminUser;
 }
-

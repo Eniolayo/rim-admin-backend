@@ -10,12 +10,16 @@ import * as bcrypt from 'bcrypt';
 import { InvitationRepository } from '../repositories/invitation.repository';
 import { AdminRoleRepository } from '../repositories/role.repository';
 import { AdminUserRepository } from '../../auth/repositories/admin-user.repository';
+import { AdminMgmtUserRepository } from '../repositories/user.repository';
 import {
   AdminInvitation,
   AdminInvitationRole,
   AdminInvitationStatus,
 } from '../../../entities/admin-invitation.entity';
-import { AdminUser, AdminUserStatus } from '../../../entities/admin-user.entity';
+import {
+  AdminUser,
+  AdminUserStatus,
+} from '../../../entities/admin-user.entity';
 import {
   InviteAdminDto,
   AdminInvitationResponseDto,
@@ -32,6 +36,7 @@ export class InvitationsService {
     private readonly invitationRepository: InvitationRepository,
     private readonly roleRepository: AdminRoleRepository,
     private readonly adminUserRepository: AdminUserRepository,
+    private readonly adminMgmtUserRepository: AdminMgmtUserRepository,
     private readonly cacheService: InvitationsCacheService,
     private readonly logger: Logger,
   ) {}
@@ -57,6 +62,7 @@ export class InvitationsService {
       id: invitation.id,
       email: invitation.email,
       role: invitation.role,
+      roleId: invitation.roleId,
       inviteToken: invitation.inviteToken,
       invitedBy: invitation.invitedBy,
       invitedByName: invitation.invitedByName,
@@ -92,23 +98,20 @@ export class InvitationsService {
   ): Promise<AdminInvitationResponseDto> {
     try {
       this.logger.log(
-        `Inviting admin: email=${dto.email}, role=${dto.role}, invitedBy=${invitedBy.id}`,
+        `Inviting admin: email=${dto.email}, roleId=${dto.roleId}, invitedBy=${invitedBy.id}`,
       );
 
       // Check if email already has a pending invitation
-      const existingInvitation =
-        await this.invitationRepository.findByEmail(
-          dto.email,
-          AdminInvitationStatus.PENDING,
-        );
+      const existingInvitation = await this.invitationRepository.findByEmail(
+        dto.email,
+        AdminInvitationStatus.PENDING,
+      );
 
       if (existingInvitation) {
         this.logger.warn(
           `Duplicate invitation attempt for email: ${dto.email}`,
         );
-        throw new BadRequestException(
-          'This email has already been invited',
-        );
+        throw new BadRequestException('This email has already been invited');
       }
 
       // Check if email is already an admin user
@@ -122,15 +125,12 @@ export class InvitationsService {
         );
       }
 
-      // Convert enum role to role name
-      const backendRoleName = this.enumToRoleName(dto.role);
-
-      // Find role by name
-      const role = await this.roleRepository.findByName(backendRoleName);
+      // Find role by ID
+      const role = await this.roleRepository.findById(dto.roleId);
       if (!role) {
-        this.logger.error(`Role not found: ${backendRoleName}`);
+        this.logger.error(`Role not found: ${dto.roleId}`);
         throw new NotFoundException(
-          `Role '${backendRoleName}' not found in system`,
+          `Role with ID '${dto.roleId}' not found in system`,
         );
       }
 
@@ -143,7 +143,8 @@ export class InvitationsService {
 
       const invitation = new AdminInvitation();
       invitation.email = dto.email;
-      invitation.role = dto.role;
+      invitation.role = null; // Legacy field, kept for backward compatibility
+      invitation.roleId = role.id;
       invitation.inviteToken = token;
       invitation.invitedBy = invitedBy.id;
       invitation.invitedByName = invitedBy.username;
@@ -166,10 +167,7 @@ export class InvitationsService {
         throw error;
       }
 
-      this.logger.error(
-        `Error inviting admin: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error inviting admin: ${error.message}`, error.stack);
       throw new InternalServerErrorException('Failed to create invitation');
     }
   }
@@ -271,10 +269,7 @@ export class InvitationsService {
 
       return result;
     } catch (error) {
-      this.logger.error(
-        `Error verifying token: ${error.message}`,
-        error.stack,
-      );
+      this.logger.error(`Error verifying token: ${error.message}`, error.stack);
       const errorResult = {
         valid: false,
         message: 'An error occurred while verifying the invitation',
@@ -335,15 +330,20 @@ export class InvitationsService {
         );
       }
 
-      // Convert enum role to role name
-      const backendRoleName = this.enumToRoleName(invitation.role);
+      // Find role by ID (preferred) or fall back to enum mapping for backward compatibility
+      let role;
+      if (invitation.roleId) {
+        role = await this.roleRepository.findById(invitation.roleId);
+      } else if (invitation.role) {
+        // Legacy support: convert enum role to role name
+        const backendRoleName = this.enumToRoleName(invitation.role);
+        role = await this.roleRepository.findByName(backendRoleName);
+      }
 
-      // Find role
-      const role = await this.roleRepository.findByName(backendRoleName);
       if (!role) {
-        this.logger.error(`Role not found: ${backendRoleName}`);
+        this.logger.error(`Role not found for invitation: ${invitation.id}`);
         throw new InternalServerErrorException(
-          `Role '${backendRoleName}' not found in system`,
+          `Role not found in system for this invitation`,
         );
       }
 
@@ -354,9 +354,8 @@ export class InvitationsService {
       const username = dto.name.toLowerCase().replace(/\s+/g, '.');
 
       // Check if username already exists
-      const existingUsername = await this.adminUserRepository.findByUsername(
-        username,
-      );
+      const existingUsername =
+        await this.adminUserRepository.findByUsername(username);
       let finalUsername = username;
       if (existingUsername) {
         // Append a number if username exists
@@ -376,7 +375,7 @@ export class InvitationsService {
       newAdmin.username = finalUsername;
       newAdmin.email = invitation.email;
       newAdmin.password = hashedPassword;
-      newAdmin.role = backendRoleName;
+      newAdmin.role = role.name;
       newAdmin.roleId = role.id;
       newAdmin.status = AdminUserStatus.ACTIVE;
       newAdmin.twoFactorEnabled = false; // CRITICAL: Force 2FA setup on first login
@@ -385,6 +384,16 @@ export class InvitationsService {
       newAdmin.createdBy = invitation.invitedBy;
 
       const savedUser = await this.adminUserRepository.save(newAdmin);
+
+      // Update role userCount
+      const updatedRole = await this.roleRepository.findById(role.id);
+      if (updatedRole) {
+        const userCount = await this.adminMgmtUserRepository.countByRole(
+          role.id,
+        );
+        updatedRole.userCount = userCount;
+        await this.roleRepository.save(updatedRole);
+      }
 
       // Mark invitation as accepted
       await this.invitationRepository.update(invitation.id, {
@@ -437,9 +446,7 @@ export class InvitationsService {
         this.logger.warn(
           `Cannot resend non-pending invitation: ${id}, status=${invitation.status}`,
         );
-        throw new BadRequestException(
-          'Can only resend pending invitations',
-        );
+        throw new BadRequestException('Can only resend pending invitations');
       }
 
       // Check if expired
@@ -516,4 +523,4 @@ export class InvitationsService {
     }
   }
 }
-
+// npm run migration:generate -- src/database/migrations/AddRoleIdToAdminInvitations

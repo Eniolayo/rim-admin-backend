@@ -24,16 +24,12 @@ export class InviteAdminDto {
   email!: string;
 
   @ApiProperty({
-    description: 'Role to assign to the admin',
-    enum: AdminInvitationRole,
-    example: AdminInvitationRole.ADMIN,
+    description: 'Role ID to assign to the admin',
+    example: 'uuid-of-role',
   })
-  @IsString({ message: 'Role must be a string' })
-  @IsEnum(AdminInvitationRole, {
-    message: 'Role must be one of: super_admin, admin, moderator',
-  })
-  @IsNotEmpty({ message: 'Role is required' })
-  role!: AdminInvitationRole;
+  @IsString({ message: 'Role ID must be a string' })
+  @IsNotEmpty({ message: 'Role ID is required' })
+  roleId!: string;
 }
 
 export class AdminInvitationResponseDto {
@@ -43,8 +39,11 @@ export class AdminInvitationResponseDto {
   @ApiProperty()
   email: string;
 
-  @ApiProperty({ enum: AdminInvitationRole })
-  role: AdminInvitationRole;
+  @ApiProperty({ enum: AdminInvitationRole, required: false })
+  role?: AdminInvitationRole | null;
+
+  @ApiProperty({ required: false })
+  roleId?: string | null;
 
   @ApiProperty()
   inviteToken: string;
@@ -125,4 +124,3 @@ export class SetupAdminAccountDto {
 }
 
 export class SetupAdminAccountResponseDto extends AdminUserResponseDto {}
-

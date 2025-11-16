@@ -1,69 +1,82 @@
-import { ApiProperty } from '@nestjs/swagger'
-import { IsArray, IsNotEmpty, IsString, ArrayNotEmpty, ArrayMinSize, IsIn } from 'class-validator'
+import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsArray,
+  IsNotEmpty,
+  IsString,
+  ArrayNotEmpty,
+  ArrayMinSize,
+  IsIn,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class PermissionDto {
   @ApiProperty()
   @IsString()
-  resource: string
+  @IsNotEmpty()
+  resource: string;
 
   @ApiProperty({ isArray: true, enum: ['read', 'write', 'delete'] })
   @IsArray()
   @ArrayNotEmpty()
   @IsIn(['read', 'write', 'delete'], { each: true })
-  actions: ('read' | 'write' | 'delete')[]
+  actions: ('read' | 'write' | 'delete')[];
 }
 
 export class CreateRoleDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  name: string
+  name: string;
 
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  description: string
+  description: string;
 
   @ApiProperty({ type: [PermissionDto] })
   @IsArray()
   @ArrayMinSize(1)
-  permissions: PermissionDto[]
+  @ValidateNested({ each: true })
+  @Type(() => PermissionDto)
+  permissions: PermissionDto[];
 }
 
 export class UpdateRoleDto {
   @ApiProperty({ required: false })
   @IsString()
-  name?: string
+  name?: string;
 
   @ApiProperty({ required: false })
   @IsString()
-  description?: string
+  description?: string;
 
   @ApiProperty({ type: [PermissionDto], required: false })
   @IsArray()
-  permissions?: PermissionDto[]
+  @ValidateNested({ each: true })
+  @Type(() => PermissionDto)
+  permissions?: PermissionDto[];
 }
 
 export class RoleResponseDto {
   @ApiProperty()
-  id: string
+  id: string;
 
   @ApiProperty()
-  name: string
+  name: string;
 
   @ApiProperty()
-  description: string
+  description: string;
 
   @ApiProperty({ type: [PermissionDto] })
-  permissions: PermissionDto[]
+  permissions: PermissionDto[];
 
   @ApiProperty()
-  userCount: number
+  userCount: number;
 
   @ApiProperty()
-  createdAt: Date
+  createdAt: Date;
 
   @ApiProperty()
-  updatedAt: Date
+  updatedAt: Date;
 }
-
