@@ -1,7 +1,7 @@
-import { Injectable } from '@nestjs/common'
-import { InjectRepository } from '@nestjs/typeorm'
-import { Repository } from 'typeorm'
-import { AdminActivityLog } from '../../../entities/admin-activity-log.entity'
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { AdminActivityLog } from '../../../entities/admin-activity-log.entity';
 
 @Injectable()
 export class AdminActivityLogRepository {
@@ -10,29 +10,41 @@ export class AdminActivityLogRepository {
     private readonly repository: Repository<AdminActivityLog>,
   ) {}
 
-  async query(filters: { adminId?: string; action?: string; resource?: string; startDate?: Date; endDate?: Date }): Promise<AdminActivityLog[]> {
-    const qb = this.repository.createQueryBuilder('log')
-    if (filters.adminId) qb.andWhere('log.adminId = :adminId', { adminId: filters.adminId })
-    if (filters.action) qb.andWhere('log.action = :action', { action: filters.action })
-    if (filters.resource) qb.andWhere('log.resource = :resource', { resource: filters.resource })
+  async query(filters: {
+    adminId?: string;
+    action?: string;
+    resource?: string;
+    startDate?: Date;
+    endDate?: Date;
+  }): Promise<AdminActivityLog[]> {
+    const qb = this.repository.createQueryBuilder('log');
+    if (filters.adminId)
+      qb.andWhere('log.adminId = :adminId', { adminId: filters.adminId });
+    if (filters.action)
+      qb.andWhere('log.action = :action', { action: filters.action });
+    if (filters.resource)
+      qb.andWhere('log.resource = :resource', { resource: filters.resource });
     if (filters.startDate && filters.endDate) {
-      qb.andWhere('log.timestamp BETWEEN :from AND :to', { from: filters.startDate, to: filters.endDate })
+      qb.andWhere('log.timestamp BETWEEN :from AND :to', {
+        from: filters.startDate,
+        to: filters.endDate,
+      });
     } else if (filters.startDate) {
-      qb.andWhere('log.timestamp >= :from', { from: filters.startDate })
+      qb.andWhere('log.timestamp >= :from', { from: filters.startDate });
     } else if (filters.endDate) {
-      qb.andWhere('log.timestamp <= :to', { to: filters.endDate })
+      qb.andWhere('log.timestamp <= :to', { to: filters.endDate });
     }
-    return qb.orderBy('log.timestamp', 'DESC').getMany()
+    return qb.orderBy('log.timestamp', 'DESC').getMany();
   }
 
   async create(data: {
-    adminId: string
-    adminName: string
-    action: string
-    resource: string
-    resourceId?: string | null
-    details?: Record<string, unknown> | null
-    ipAddress?: string | null
+    adminId: string;
+    adminName: string;
+    action: string;
+    resource: string;
+    resourceId?: string | null;
+    details?: Record<string, unknown> | null;
+    ipAddress?: string | null;
   }): Promise<AdminActivityLog> {
     const log = this.repository.create({
       adminId: data.adminId,
@@ -42,8 +54,32 @@ export class AdminActivityLogRepository {
       resourceId: data.resourceId ?? null,
       details: data.details ?? null,
       ipAddress: data.ipAddress ?? null,
-    })
-    return this.repository.save(log)
+    });
+    return this.repository.save(log);
+  }
+
+  async bulkCreate(
+    data: Array<{
+      adminId: string;
+      adminName: string;
+      action: string;
+      resource: string;
+      resourceId?: string | null;
+      details?: Record<string, unknown> | null;
+      ipAddress?: string | null;
+    }>,
+  ): Promise<AdminActivityLog[]> {
+    const logs = data.map((item) =>
+      this.repository.create({
+        adminId: item.adminId,
+        adminName: item.adminName,
+        action: item.action,
+        resource: item.resource,
+        resourceId: item.resourceId ?? null,
+        details: item.details ?? null,
+        ipAddress: item.ipAddress ?? null,
+      }),
+    );
+    return this.repository.save(logs);
   }
 }
-

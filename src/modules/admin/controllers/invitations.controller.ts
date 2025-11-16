@@ -71,7 +71,7 @@ export class InvitationsController {
     @CurrentUser() user: AdminUser,
   ): Promise<AdminInvitationResponseDto> {
     this.logger.log(
-      `POST /admin/invitations/invite - Inviting ${dto.email} as ${dto.role}`,
+      `POST /admin/invitations/invite - Inviting ${dto.email} with roleId ${dto.roleId}`,
     );
     return this.service.inviteAdmin(dto, user);
   }
@@ -181,7 +181,9 @@ export class InvitationsController {
     @Param('id') id: string,
     @CurrentUser() user: AdminUser,
   ): Promise<AdminInvitationResponseDto> {
-    this.logger.log(`POST /admin/invitations/${id}/resend - Resending invitation`);
+    this.logger.log(
+      `POST /admin/invitations/${id}/resend - Resending invitation`,
+    );
     return this.service.resendInvitation(id, user);
   }
 
@@ -216,4 +218,3 @@ export class InvitationsController {
     return this.service.cancelInvitation(id);
   }
 }
-
