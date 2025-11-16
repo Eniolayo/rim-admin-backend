@@ -76,15 +76,18 @@ export class LoansService {
       const loanId = await this.generateLoanId();
 
       // Calculate amounts
-      const interest = (createLoanDto.amount * createLoanDto.interestRate) / 100;
+      const interest =
+        (createLoanDto.amount * createLoanDto.interestRate) / 100;
       const amountDue = createLoanDto.amount + interest;
       const dueDate = new Date();
       dueDate.setDate(dueDate.getDate() + createLoanDto.repaymentPeriod);
-      this.logger.log(`User business ID: ${user.userId}, User UUID: ${user.id}`);
+      this.logger.log(
+        `User business ID: ${user.userId}, User UUID: ${user.id}`,
+      );
 
       const loan = this.repository.create({
         loanId,
-        userId: user.id,  // Use UUID (primary key), not the business userId field
+        userId: user.id, // Use UUID (primary key), not the business userId field
         amount: createLoanDto.amount,
         network: createLoanDto.network,
         interestRate: createLoanDto.interestRate,
@@ -118,7 +121,10 @@ export class LoansService {
       } catch (error) {
         // Cache invalidation error - log but don't fail
         this.logger.warn(
-          { error: error instanceof Error ? error.message : String(error), loanId: savedLoan.loanId },
+          {
+            error: error instanceof Error ? error.message : String(error),
+            loanId: savedLoan.loanId,
+          },
           'Error invalidating cache after loan creation',
         );
       }
@@ -135,28 +141,31 @@ export class LoansService {
 
       // Handle database constraint violations from TypeORM
       if (error instanceof QueryFailedError) {
-        const dbError = error as QueryFailedError & { code?: string; message?: string };
-        
+        const dbError = error as QueryFailedError & {
+          code?: string;
+          message?: string;
+        };
+
         // Log the actual database error for debugging
         this.logger.error(
-          { 
-            error: dbError.message, 
+          {
+            error: dbError.message,
             code: dbError.code,
-            userId: createLoanDto.userId 
+            userId: createLoanDto.userId,
           },
           'Database error creating loan',
         );
-        
+
         if (dbError.code === '23502') {
           // NOT NULL constraint violation - extract which column is missing
           const columnMatch = dbError.message?.match(/column "(\w+)"/i);
           const columnName = columnMatch ? columnMatch[1] : 'unknown';
-          
+
           throw new BadRequestException(
             `Loan could not be created due to missing required field: ${columnName}. Please check the user data and try again.`,
           );
         }
-        
+
         if (dbError.code === '23505') {
           // Unique constraint violation
           this.logger.error(
@@ -177,7 +186,7 @@ export class LoansService {
             'Loan could not be created due to invalid user reference.',
           );
         }
-        
+
         if (dbError.code === '22P02') {
           // Invalid UUID format
           this.logger.error(
@@ -195,7 +204,10 @@ export class LoansService {
         const dbError = error as { code: string; message?: string };
         if (['23505', '23503', '23502'].includes(dbError.code)) {
           this.logger.error(
-            { error: dbError.message || 'Database constraint violation', userId: createLoanDto.userId },
+            {
+              error: dbError.message || 'Database constraint violation',
+              userId: createLoanDto.userId,
+            },
             'Error creating loan: database constraint violation',
           );
           throw new BadRequestException(
@@ -232,7 +244,10 @@ export class LoansService {
       if (queryDto?.page !== undefined && queryDto.page < 1) {
         throw new BadRequestException('Page number must be at least 1');
       }
-      if (queryDto?.limit !== undefined && (queryDto.limit < 1 || queryDto.limit > 100)) {
+      if (
+        queryDto?.limit !== undefined &&
+        (queryDto.limit < 1 || queryDto.limit > 100)
+      ) {
         throw new BadRequestException('Limit must be between 1 and 100');
       }
 
@@ -282,10 +297,63 @@ export class LoansService {
       const page = queryDto.page ?? 1;
       const limit = queryDto.limit ?? 10;
 
+      // Convert dateRange strings to Date objects if provided
+      let dateRange: { from: Date; to: Date } | undefined;
+      if (queryDto.dateRange?.from && queryDto.dateRange?.to) {
+        const from = new Date(queryDto.dateRange.from);
+        const to = new Date(queryDto.dateRange.to);
+
+        // Validate dateRange
+        if (from > to) {
+          throw new BadRequestException(
+            'Start date must be before or equal to end date',
+          );
+        }
+
+        dateRange = { from, to };
+      }
+
+      // Validate and prepare amountRange
+      let amountRange: { min: number; max: number } | undefined;
+      if (queryDto.amountRange) {
+        const min = queryDto.amountRange.min;
+        const max = queryDto.amountRange.max;
+
+        if (min !== undefined && max !== undefined) {
+          if (min < 0 || max < 0) {
+            throw new BadRequestException(
+              'Amount range values must be non-negative',
+            );
+          }
+          if (min > max) {
+            throw new BadRequestException(
+              'Minimum amount must be less than or equal to maximum amount',
+            );
+          }
+          amountRange = { min, max };
+        } else if (min !== undefined) {
+          if (min < 0) {
+            throw new BadRequestException(
+              'Minimum amount must be non-negative',
+            );
+          }
+          amountRange = { min, max: Number.MAX_SAFE_INTEGER };
+        } else if (max !== undefined) {
+          if (max < 0) {
+            throw new BadRequestException(
+              'Maximum amount must be non-negative',
+            );
+          }
+          amountRange = { min: 0, max };
+        }
+      }
+
       const [loans, total] = await this.loanRepository.findWithFilters({
         status: queryDto.status,
         network: queryDto.network,
         search: queryDto.search,
+        dateRange,
+        amountRange,
         page,
         limit,
       });
@@ -316,7 +384,10 @@ export class LoansService {
       }
 
       this.logger.error(
-        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
         'Error finding loans',
       );
       throw new BadRequestException('Error retrieving loans');
@@ -336,7 +407,10 @@ export class LoansService {
       } catch (error) {
         // Cache error - fallback to database
         this.logger.warn(
-          { error: error instanceof Error ? error.message : String(error), loanId: id },
+          {
+            error: error instanceof Error ? error.message : String(error),
+            loanId: id,
+          },
           'Cache error, falling back to database',
         );
       }
@@ -355,7 +429,10 @@ export class LoansService {
       } catch (error) {
         // Cache error - continue without caching
         this.logger.warn(
-          { error: error instanceof Error ? error.message : String(error), loanId: id },
+          {
+            error: error instanceof Error ? error.message : String(error),
+            loanId: id,
+          },
           'Error caching loan',
         );
       }
@@ -367,7 +444,11 @@ export class LoansService {
       }
 
       this.logger.error(
-        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined, loanId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+          loanId: id,
+        },
         'Error finding loan',
       );
       throw new BadRequestException('Error retrieving loan');
@@ -410,7 +491,10 @@ export class LoansService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), loanId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          loanId: id,
+        },
         'Error invalidating cache after loan update',
       );
     }
@@ -427,27 +511,37 @@ export class LoansService {
     // Validate admin user
     if (!adminUser) {
       this.logger.error('Admin user is null or undefined');
-      throw new BadRequestException('Admin user information is required to approve a loan');
+      throw new BadRequestException(
+        'Admin user information is required to approve a loan',
+      );
     }
 
     // Validate and extract admin user ID
     const adminUserId = adminUser?.id;
-    
+
     // Log admin user details for debugging
-    this.logger.debug({
-      adminUserId: adminUserId,
-      adminUserEmail: adminUser?.email,
-      adminUserUsername: adminUser?.username,
-      adminUserKeys: adminUser ? Object.keys(adminUser) : [],
-    }, 'Admin user attempting to approve loan');
+    this.logger.debug(
+      {
+        adminUserId: adminUserId,
+        adminUserEmail: adminUser?.email,
+        adminUserUsername: adminUser?.username,
+        adminUserKeys: adminUser ? Object.keys(adminUser) : [],
+      },
+      'Admin user attempting to approve loan',
+    );
 
     if (!adminUserId || typeof adminUserId !== 'string') {
-      this.logger.error({
-        adminUserId: adminUserId,
-        adminUserType: typeof adminUser,
-        adminUser: adminUser ? JSON.stringify(adminUser, null, 2) : null,
-      }, 'Admin user ID is missing or invalid');
-      throw new BadRequestException('Admin user ID is required to approve a loan');
+      this.logger.error(
+        {
+          adminUserId: adminUserId,
+          adminUserType: typeof adminUser,
+          adminUser: adminUser ? JSON.stringify(adminUser, null, 2) : null,
+        },
+        'Admin user ID is missing or invalid',
+      );
+      throw new BadRequestException(
+        'Admin user ID is required to approve a loan',
+      );
     }
 
     const loan = await this.loanRepository.findByLoanId(approveLoanDto.loanId);
@@ -473,7 +567,9 @@ export class LoansService {
     await this.loanRepository.save(loan);
 
     // Reload the loan to ensure all fields are correctly persisted
-    const updatedLoan = await this.loanRepository.findByLoanId(approveLoanDto.loanId);
+    const updatedLoan = await this.loanRepository.findByLoanId(
+      approveLoanDto.loanId,
+    );
 
     if (!updatedLoan) {
       throw new NotFoundException(
@@ -482,10 +578,13 @@ export class LoansService {
     }
 
     // Log to verify the approvedBy was set
-    this.logger.debug({
-      loanId: updatedLoan.loanId,
-      approvedBy: updatedLoan.approvedBy,
-    }, 'Loan approved with approvedBy set');
+    this.logger.debug(
+      {
+        loanId: updatedLoan.loanId,
+        approvedBy: updatedLoan.approvedBy,
+      },
+      'Loan approved with approvedBy set',
+    );
 
     this.logger.log({ loanId: updatedLoan.loanId }, 'Loan approved');
 
@@ -499,7 +598,10 @@ export class LoansService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), loanId: approveLoanDto.loanId },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          loanId: approveLoanDto.loanId,
+        },
         'Error invalidating cache after loan approval',
       );
     }
@@ -516,27 +618,37 @@ export class LoansService {
     // Validate admin user
     if (!adminUser) {
       this.logger.error('Admin user is null or undefined');
-      throw new BadRequestException('Admin user information is required to reject a loan');
+      throw new BadRequestException(
+        'Admin user information is required to reject a loan',
+      );
     }
 
     // Validate and extract admin user ID
     const adminUserId = adminUser?.id;
-    
+
     // Log admin user details for debugging
-    this.logger.debug({
-      adminUserId: adminUserId,
-      adminUserEmail: adminUser?.email,
-      adminUserUsername: adminUser?.username,
-      adminUserKeys: adminUser ? Object.keys(adminUser) : [],
-    }, 'Admin user attempting to reject loan');
+    this.logger.debug(
+      {
+        adminUserId: adminUserId,
+        adminUserEmail: adminUser?.email,
+        adminUserUsername: adminUser?.username,
+        adminUserKeys: adminUser ? Object.keys(adminUser) : [],
+      },
+      'Admin user attempting to reject loan',
+    );
 
     if (!adminUserId || typeof adminUserId !== 'string') {
-      this.logger.error({
-        adminUserId: adminUserId,
-        adminUserType: typeof adminUser,
-        adminUser: adminUser ? JSON.stringify(adminUser, null, 2) : null,
-      }, 'Admin user ID is missing or invalid');
-      throw new BadRequestException('Admin user ID is required to reject a loan');
+      this.logger.error(
+        {
+          adminUserId: adminUserId,
+          adminUserType: typeof adminUser,
+          adminUser: adminUser ? JSON.stringify(adminUser, null, 2) : null,
+        },
+        'Admin user ID is missing or invalid',
+      );
+      throw new BadRequestException(
+        'Admin user ID is required to reject a loan',
+      );
     }
 
     const loan = await this.loanRepository.findByLoanId(rejectLoanDto.loanId);
@@ -560,7 +672,9 @@ export class LoansService {
     await this.loanRepository.save(loan);
 
     // Reload the loan to ensure all fields are correctly persisted
-    const updatedLoan = await this.loanRepository.findByLoanId(rejectLoanDto.loanId);
+    const updatedLoan = await this.loanRepository.findByLoanId(
+      rejectLoanDto.loanId,
+    );
 
     if (!updatedLoan) {
       throw new NotFoundException(
@@ -569,10 +683,13 @@ export class LoansService {
     }
 
     // Log to verify the rejectedBy was set
-    this.logger.debug({
-      loanId: updatedLoan.loanId,
-      rejectedBy: updatedLoan.rejectedBy,
-    }, 'Loan rejected with rejectedBy set');
+    this.logger.debug(
+      {
+        loanId: updatedLoan.loanId,
+        rejectedBy: updatedLoan.rejectedBy,
+      },
+      'Loan rejected with rejectedBy set',
+    );
 
     this.logger.log({ loanId: updatedLoan.loanId }, 'Loan rejected');
 
@@ -586,7 +703,10 @@ export class LoansService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), loanId: rejectLoanDto.loanId },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          loanId: rejectLoanDto.loanId,
+        },
         'Error invalidating cache after loan rejection',
       );
     }
@@ -639,7 +759,10 @@ export class LoansService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), loanId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          loanId: id,
+        },
         'Error invalidating cache after loan disbursement',
       );
     }
@@ -668,7 +791,10 @@ export class LoansService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), loanId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          loanId: id,
+        },
         'Error invalidating cache after loan deletion',
       );
     }
@@ -681,10 +807,63 @@ export class LoansService {
       // Validate query parameters (same as findAll, but no pagination validation)
       // No caching - directly query database
 
+      // Convert dateRange strings to Date objects if provided
+      let dateRange: { from: Date; to: Date } | undefined;
+      if (queryDto?.dateRange?.from && queryDto?.dateRange?.to) {
+        const from = new Date(queryDto.dateRange.from);
+        const to = new Date(queryDto.dateRange.to);
+
+        // Validate dateRange
+        if (from > to) {
+          throw new BadRequestException(
+            'Start date must be before or equal to end date',
+          );
+        }
+
+        dateRange = { from, to };
+      }
+
+      // Validate and prepare amountRange
+      let amountRange: { min: number; max: number } | undefined;
+      if (queryDto?.amountRange) {
+        const min = queryDto.amountRange.min;
+        const max = queryDto.amountRange.max;
+
+        if (min !== undefined && max !== undefined) {
+          if (min < 0 || max < 0) {
+            throw new BadRequestException(
+              'Amount range values must be non-negative',
+            );
+          }
+          if (min > max) {
+            throw new BadRequestException(
+              'Minimum amount must be less than or equal to maximum amount',
+            );
+          }
+          amountRange = { min, max };
+        } else if (min !== undefined) {
+          if (min < 0) {
+            throw new BadRequestException(
+              'Minimum amount must be non-negative',
+            );
+          }
+          amountRange = { min, max: Number.MAX_SAFE_INTEGER };
+        } else if (max !== undefined) {
+          if (max < 0) {
+            throw new BadRequestException(
+              'Maximum amount must be non-negative',
+            );
+          }
+          amountRange = { min: 0, max };
+        }
+      }
+
       const loans = await this.loanRepository.findAllForExport({
         status: queryDto?.status,
         network: queryDto?.network,
         search: queryDto?.search,
+        dateRange,
+        amountRange,
       });
 
       return loans.map((loan) => this.mapToResponse(loan));
@@ -694,7 +873,10 @@ export class LoansService {
       }
 
       this.logger.error(
-        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
         'Error exporting loans',
       );
       throw new BadRequestException('Error exporting loans');
@@ -735,7 +917,10 @@ export class LoansService {
       return stats;
     } catch (error) {
       this.logger.error(
-        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
         'Error getting loan stats',
       );
       throw new BadRequestException('Error retrieving loan statistics');
@@ -759,11 +944,16 @@ export class LoansService {
       }
 
       if (start > end) {
-        throw new BadRequestException('Start date must be before or equal to end date');
+        throw new BadRequestException(
+          'Start date must be before or equal to end date',
+        );
       }
 
       // Get loans in date range
-      const loans = await this.loanRepository.getPerformanceReportData(start, end);
+      const loans = await this.loanRepository.getPerformanceReportData(
+        start,
+        end,
+      );
 
       // Calculate totals
       const totalLoans = loans.length;
@@ -810,7 +1000,8 @@ export class LoansService {
       // Calculate average loan amount
       const averageLoanAmount =
         totalLoans > 0
-          ? loans.reduce((sum, loan) => sum + Number(loan.amount), 0) / totalLoans
+          ? loans.reduce((sum, loan) => sum + Number(loan.amount), 0) /
+            totalLoans
           : 0;
 
       // Calculate average repayment time (from disbursedAt to completedAt for completed loans)

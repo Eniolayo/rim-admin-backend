@@ -6,9 +6,51 @@ import {
   IsNumber,
   Min,
   Max,
+  IsDateString,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { LoanStatus, Network } from '../../../entities/loan.entity';
+
+class DateRangeDto {
+  @ApiPropertyOptional({
+    description: 'Start date (ISO 8601 format)',
+    example: '2024-01-01',
+  })
+  @IsOptional()
+  @IsDateString()
+  from?: string;
+
+  @ApiPropertyOptional({
+    description: 'End date (ISO 8601 format)',
+    example: '2024-12-31',
+  })
+  @IsOptional()
+  @IsDateString()
+  to?: string;
+}
+
+class AmountRangeDto {
+  @ApiPropertyOptional({
+    description: 'Minimum loan amount',
+    minimum: 0,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  min?: number;
+
+  @ApiPropertyOptional({
+    description: 'Maximum loan amount',
+    minimum: 0,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  max?: number;
+}
 
 export class LoanQueryDto {
   @ApiPropertyOptional({
@@ -35,6 +77,24 @@ export class LoanQueryDto {
   search?: string;
 
   @ApiPropertyOptional({
+    description: 'Filter by date range (createdAt)',
+    type: DateRangeDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => DateRangeDto)
+  dateRange?: DateRangeDto;
+
+  @ApiPropertyOptional({
+    description: 'Filter by amount range',
+    type: AmountRangeDto,
+  })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => AmountRangeDto)
+  amountRange?: AmountRangeDto;
+
+  @ApiPropertyOptional({
     description: 'Page number',
     minimum: 1,
     default: 1,
@@ -58,4 +118,3 @@ export class LoanQueryDto {
   @Max(100)
   limit?: number;
 }
-
