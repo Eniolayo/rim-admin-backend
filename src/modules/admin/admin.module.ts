@@ -101,6 +101,8 @@ import { RedisConfig } from '../../config/redis.config';
     InvitationsService,
     ActivityService,
     SettingsService,
+    ActivityQueueService,
+    ActivityLogInterceptor,
   ],
 })
 export class AdminModule {}

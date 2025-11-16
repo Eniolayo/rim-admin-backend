@@ -3,16 +3,18 @@ import { Logger } from 'nestjs-pino'
 import { TransactionRepository } from '../repositories/transaction.repository'
 import { CreateReconciliationDto } from '../dto/reconcile.dto'
 import { TransactionQueryDto } from '../dto/transaction-query.dto'
-import { Transaction } from '../../../entities/transaction.entity'
+import { Transaction, TransactionType, TransactionStatus } from '../../../entities/transaction.entity'
 import { TransactionsCacheService } from './transactions-cache.service'
 import { TransactionStatsDto, TransactionResponseDto } from '../dto/transaction-response.dto'
 import { PaginatedResponseDto } from '../../users/dto/paginated-response.dto'
+import { CreditScoreService } from '../../credit-score/services/credit-score.service'
 
 @Injectable()
 export class TransactionsService {
   constructor(
     private readonly repo: TransactionRepository,
     private readonly cacheService: TransactionsCacheService,
+    private readonly creditScoreService: CreditScoreService,
     private readonly logger: Logger,
   ) {}
 
@@ -162,9 +164,14 @@ export class TransactionsService {
   async reconcile(payload: CreateReconciliationDto, adminId: string): Promise<Transaction> {
     const tx = await this.repo.findByTransactionId(payload.transactionId)
     if (!tx) throw new NotFoundException('Transaction not found')
+    
+    const newStatus = payload.status ?? tx.status
+    const wasCompleted = tx.status === TransactionStatus.COMPLETED
+    const isNowCompleted = newStatus === TransactionStatus.COMPLETED
+    
     const patch: Partial<Transaction> = {
       amount: payload.amount ?? tx.amount,
-      status: payload.status ?? tx.status,
+      status: newStatus,
       notes: payload.notes ?? tx.notes ?? null,
       reconciledAt: new Date(),
       reconciledBy: adminId,
@@ -172,6 +179,35 @@ export class TransactionsService {
     await this.repo.update(tx.id, patch)
     const updated = await this.repo.findById(tx.id)
     if (!updated) throw new NotFoundException('Transaction not found')
+
+    // Award credit score if repayment transaction is being marked as completed
+    if (
+      updated.type === TransactionType.REPAYMENT &&
+      !wasCompleted &&
+      isNowCompleted &&
+      updated.loanId
+    ) {
+      try {
+        await this.creditScoreService.awardPointsForRepayment(
+          updated.id,
+          updated.loanId,
+        )
+        this.logger.log(
+          { transactionId: updated.id, loanId: updated.loanId },
+          'Credit score awarded for repayment',
+        )
+      } catch (error) {
+        // Log error but don't fail the reconciliation
+        this.logger.error(
+          {
+            error: error instanceof Error ? error.message : String(error),
+            transactionId: updated.id,
+            loanId: updated.loanId,
+          },
+          'Error awarding credit score for repayment',
+        )
+      }
+    }
 
     // Invalidate cache - transaction, list and stats changed
     try {
@@ -215,4 +251,3 @@ export class TransactionsService {
     }
   }
 }
-

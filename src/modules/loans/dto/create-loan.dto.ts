@@ -7,24 +7,39 @@ export class CreateLoanDto {
   @IsString()
   userId: string;
 
-  @ApiProperty({ description: 'Loan amount', example: 50000 })
+  @ApiPropertyOptional({
+    description:
+      'Loan amount (if not provided, will be calculated based on credit score)',
+    example: 50000,
+  })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  amount: number;
+  amount?: number;
 
   @ApiProperty({ description: 'Network', enum: Network, example: Network.MTN })
   @IsEnum(Network)
   network: Network;
 
-  @ApiProperty({ description: 'Interest rate percentage', example: 5 })
+  @ApiPropertyOptional({
+    description:
+      'Interest rate percentage (if not provided, will be calculated based on credit score)',
+    example: 5,
+  })
+  @IsOptional()
   @IsNumber()
   @Min(0)
-  interestRate: number;
+  interestRate?: number;
 
-  @ApiProperty({ description: 'Repayment period in days', example: 30 })
+  @ApiPropertyOptional({
+    description:
+      'Repayment period in days (if not provided, will be calculated based on credit score)',
+    example: 30,
+  })
+  @IsOptional()
   @IsNumber()
   @Min(1)
-  repaymentPeriod: number;
+  repaymentPeriod?: number;
 
   @ApiPropertyOptional({ description: 'Metadata', type: 'object' })
   @IsOptional()

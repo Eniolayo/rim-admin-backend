@@ -25,6 +25,8 @@ import { Loan, LoanStatus, Network } from '../../../entities/loan.entity';
 import { AdminUser } from '../../../entities/admin-user.entity';
 import { User } from '../../../entities/user.entity';
 import { LoansCacheService } from './loans-cache.service';
+import { CreditScoreService } from '../../credit-score/services/credit-score.service';
+import { SystemConfigService } from '../../system-config/services/system-config.service';
 
 @Injectable()
 export class LoansService {
@@ -36,6 +38,8 @@ export class LoansService {
     @InjectRepository(User)
     private readonly userEntityRepository: Repository<User>,
     private readonly cacheService: LoansCacheService,
+    private readonly creditScoreService: CreditScoreService,
+    private readonly systemConfigService: SystemConfigService,
     private readonly logger: Logger,
   ) {}
 
@@ -64,23 +68,113 @@ export class LoansService {
         );
       }
 
+      // If amount not provided, calculate based on credit score
+      let loanAmount = createLoanDto.amount;
+      if (!loanAmount || loanAmount === 0) {
+        try {
+          loanAmount =
+            await this.creditScoreService.calculateEligibleLoanAmount(user.id);
+          this.logger.log(
+            { userId: user.id, calculatedAmount: loanAmount },
+            'Calculated loan amount based on credit score',
+          );
+        } catch (error) {
+          this.logger.warn(
+            {
+              error: error instanceof Error ? error.message : String(error),
+              userId: user.id,
+            },
+            'Error calculating loan amount, using default',
+          );
+          // Fallback to default or throw error
+          throw new BadRequestException(
+            'Loan amount is required. Unable to calculate based on credit score.',
+          );
+        }
+      }
+
       // Validate loan amount does not exceed user's credit limit
       const userCreditLimit = Number(user.creditLimit);
-      if (createLoanDto.amount > userCreditLimit) {
+      if (loanAmount > userCreditLimit) {
         throw new BadRequestException(
-          `Loan amount exceeds user's credit limit. Maximum allowed: ${userCreditLimit}, Requested: ${createLoanDto.amount}`,
+          `Loan amount exceeds user's credit limit. Maximum allowed: ${userCreditLimit}, Requested: ${loanAmount}`,
         );
       }
+
+      // Calculate interest rate if not provided
+      let interestRate = createLoanDto.interestRate;
+      if (!interestRate || interestRate === 0) {
+        try {
+          interestRate =
+            await this.creditScoreService.calculateInterestRateByCreditScore(
+              user.id,
+            );
+          this.logger.log(
+            { userId: user.id, calculatedRate: interestRate },
+            'Calculated interest rate based on credit score',
+          );
+        } catch (error) {
+          this.logger.warn(
+            {
+              error: error instanceof Error ? error.message : String(error),
+              userId: user.id,
+            },
+            'Error calculating interest rate, using default',
+          );
+          // Fallback to default
+          interestRate = await this.systemConfigService.getValue<number>(
+            'loan',
+            'interest_rate.default',
+            5,
+          );
+        }
+      }
+
+      // Validate interest rate
+      await this.validateInterestRate(interestRate);
+
+      // Calculate repayment period if not provided
+      let repaymentPeriod = createLoanDto.repaymentPeriod;
+      if (!repaymentPeriod || repaymentPeriod === 0) {
+        try {
+          repaymentPeriod =
+            await this.creditScoreService.calculateRepaymentPeriodByCreditScore(
+              user.id,
+            );
+          this.logger.log(
+            { userId: user.id, calculatedPeriod: repaymentPeriod },
+            'Calculated repayment period based on credit score',
+          );
+        } catch (error) {
+          this.logger.warn(
+            {
+              error: error instanceof Error ? error.message : String(error),
+              userId: user.id,
+            },
+            'Error calculating repayment period, using default',
+          );
+          // Fallback to default
+          repaymentPeriod = await this.systemConfigService.getValue<number>(
+            'loan',
+            'repayment_period.default',
+            30,
+          );
+        }
+      }
+
+      // Validate repayment period
+      await this.validateRepaymentPeriod(repaymentPeriod);
 
       // Generate loanId
       const loanId = await this.generateLoanId();
 
-      // Calculate amounts
-      const interest =
-        (createLoanDto.amount * createLoanDto.interestRate) / 100;
-      const amountDue = createLoanDto.amount + interest;
+      // Calculate amounts with upfront interest deduction
+      // Interest is deducted from the loan amount before disbursement
+      const interest = (loanAmount * interestRate) / 100;
+      const disbursedAmount = loanAmount - interest; // User receives this amount
+      const amountDue = loanAmount; // User repays the original amount (not amount + interest)
       const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + createLoanDto.repaymentPeriod);
+      dueDate.setDate(dueDate.getDate() + repaymentPeriod);
       this.logger.log(
         `User business ID: ${user.userId}, User UUID: ${user.id}`,
       );
@@ -88,15 +182,16 @@ export class LoansService {
       const loan = this.repository.create({
         loanId,
         userId: user.id, // Use UUID (primary key), not the business userId field
-        amount: createLoanDto.amount,
+        amount: loanAmount,
+        disbursedAmount, // Amount actually given to user (after interest deduction)
         network: createLoanDto.network,
-        interestRate: createLoanDto.interestRate,
-        repaymentPeriod: createLoanDto.repaymentPeriod,
+        interestRate,
+        repaymentPeriod,
         userPhone: user.phone,
         userEmail: user.email,
-        amountDue,
+        amountDue, // User repays the original amount
         amountPaid: 0,
-        outstandingAmount: amountDue,
+        outstandingAmount: amountDue, // Initially equals amountDue
         dueDate,
         status: LoanStatus.PENDING,
         metadata: createLoanDto.metadata || null,
@@ -467,13 +562,33 @@ export class LoansService {
       throw new NotFoundException(`Loan with ID ${id} not found`);
     }
 
+    // Validate interest rate if provided
+    if (updateLoanDto.interestRate !== undefined) {
+      await this.validateInterestRate(updateLoanDto.interestRate);
+    }
+
+    // Validate repayment period if provided
+    if (updateLoanDto.repaymentPeriod !== undefined) {
+      await this.validateRepaymentPeriod(updateLoanDto.repaymentPeriod);
+    }
+
     // Recalculate amounts if amount or interest rate changed
     if (updateLoanDto.amount || updateLoanDto.interestRate) {
       const amount = updateLoanDto.amount ?? Number(loan.amount);
       const interestRate = updateLoanDto.interestRate ?? loan.interestRate;
       const interest = (amount * interestRate) / 100;
-      loan.amountDue = amount + interest;
+      loan.disbursedAmount = amount - interest; // User receives amount minus interest
+      loan.amountDue = amount; // User repays the original amount
       loan.outstandingAmount = loan.amountDue - Number(loan.amountPaid);
+    }
+
+    // Recalculate due date if repayment period changed
+    if (updateLoanDto.repaymentPeriod !== undefined) {
+      const repaymentPeriod = updateLoanDto.repaymentPeriod;
+      const baseDate = loan.approvedAt || loan.createdAt;
+      const newDueDate = new Date(baseDate);
+      newDueDate.setDate(newDueDate.getDate() + repaymentPeriod);
+      loan.dueDate = newDueDate;
     }
 
     Object.assign(loan, updateLoanDto);
@@ -967,7 +1082,7 @@ export class LoansService {
             LoanStatus.DEFAULTED,
           ].includes(loan.status),
         )
-        .reduce((sum, loan) => sum + Number(loan.amount), 0);
+        .reduce((sum, loan) => sum + Number(loan.disbursedAmount), 0);
 
       const totalRepaid = loans.reduce(
         (sum, loan) => sum + Number(loan.amountPaid),
@@ -1105,6 +1220,50 @@ export class LoansService {
     return `LOAN-${year}-${sequence}`;
   }
 
+  /**
+   * Validate interest rate against min/max limits from system config
+   */
+  private async validateInterestRate(rate: number): Promise<void> {
+    const minRate = await this.systemConfigService.getValue<number>(
+      'loan',
+      'interest_rate.min',
+      1,
+    );
+    const maxRate = await this.systemConfigService.getValue<number>(
+      'loan',
+      'interest_rate.max',
+      20,
+    );
+
+    if (rate < minRate || rate > maxRate) {
+      throw new BadRequestException(
+        `Interest rate must be between ${minRate}% and ${maxRate}%. Provided: ${rate}%`,
+      );
+    }
+  }
+
+  /**
+   * Validate repayment period against min/max limits from system config
+   */
+  private async validateRepaymentPeriod(period: number): Promise<void> {
+    const minPeriod = await this.systemConfigService.getValue<number>(
+      'loan',
+      'repayment_period.min',
+      7,
+    );
+    const maxPeriod = await this.systemConfigService.getValue<number>(
+      'loan',
+      'repayment_period.max',
+      90,
+    );
+
+    if (period < minPeriod || period > maxPeriod) {
+      throw new BadRequestException(
+        `Repayment period must be between ${minPeriod} and ${maxPeriod} days. Provided: ${period} days`,
+      );
+    }
+  }
+
   private mapToResponse(loan: Loan): LoanResponseDto {
     return {
       id: loan.id,
@@ -1113,6 +1272,7 @@ export class LoansService {
       userPhone: loan.userPhone,
       userEmail: loan.userEmail,
       amount: Number(loan.amount),
+      disbursedAmount: Number(loan.disbursedAmount),
       status: loan.status,
       network: loan.network,
       interestRate: Number(loan.interestRate),

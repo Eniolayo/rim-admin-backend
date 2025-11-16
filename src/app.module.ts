@@ -1,7 +1,7 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { APP_GUARD, APP_PIPE } from '@nestjs/core';
+import { APP_GUARD, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
 import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -27,9 +27,12 @@ import {
   Department,
   AdminActivityLog,
   SecuritySettings,
+  SystemConfig,
+  CreditScoreHistory,
 } from './entities';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { AdminTwoFactorGuard } from './modules/auth/guards/admin-2fa.guard';
+import { ActivityLogInterceptor } from './modules/admin/interceptors/activity-log.interceptor';
 import { UsersModule } from './modules/users/users.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { LoansModule } from './modules/loans/loans.module';
@@ -37,6 +40,8 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { SupportModule } from './modules/support/support.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { RedisModule } from './common/redis/redis.module';
+import { SystemConfigModule } from './modules/system-config/system-config.module';
+import { CreditScoreModule } from './modules/credit-score/credit-score.module';
 
 @Module({
   imports: [
@@ -54,11 +59,13 @@ import { RedisModule } from './common/redis/redis.module';
           then: Joi.string().default('localhost'),
           otherwise: Joi.string().required(),
         }),
-        DB_PORT: Joi.number().port().when('NODE_ENV', {
-          is: 'test',
-          then: Joi.number().port().default(5432),
-          otherwise: Joi.number().port().required(),
-        }),
+        DB_PORT: Joi.number()
+          .port()
+          .when('NODE_ENV', {
+            is: 'test',
+            then: Joi.number().port().default(5432),
+            otherwise: Joi.number().port().required(),
+          }),
         DB_USERNAME: Joi.string().when('NODE_ENV', {
           is: 'test',
           then: Joi.string().default('postgres'),
@@ -131,6 +138,8 @@ import { RedisModule } from './common/redis/redis.module';
             Department,
             AdminActivityLog,
             SecuritySettings,
+            SystemConfig,
+            CreditScoreHistory,
           ],
           synchronize: false,
           logging: configService.get('NODE_ENV') === 'development',
@@ -146,6 +155,8 @@ import { RedisModule } from './common/redis/redis.module';
     SupportModule,
     AdminModule,
     DashboardModule,
+    SystemConfigModule,
+    CreditScoreModule,
   ],
   controllers: [AppController],
   providers: [
@@ -169,6 +180,10 @@ import { RedisModule } from './common/redis/redis.module';
     {
       provide: APP_GUARD,
       useClass: AdminTwoFactorGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ActivityLogInterceptor,
     },
   ],
 })

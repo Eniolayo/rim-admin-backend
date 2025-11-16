@@ -228,37 +228,55 @@ export class LoanRepository {
       (loan) => loan.createdAt >= today && loan.createdAt < tomorrow,
     );
 
-    const completedLoans = loans.filter((loan) => loan.status === LoanStatus.COMPLETED);
-    const defaultedLoans = loans.filter((loan) => loan.status === LoanStatus.DEFAULTED);
+    const completedLoans = loans.filter(
+      (loan) => loan.status === LoanStatus.COMPLETED,
+    );
+    const defaultedLoans = loans.filter(
+      (loan) => loan.status === LoanStatus.DEFAULTED,
+    );
     const outstandingLoans = loans.filter((loan) =>
       [LoanStatus.DISBURSED, LoanStatus.REPAYING].includes(loan.status),
     );
 
-    const totalRepaid = loans.reduce((sum, loan) => sum + Number(loan.amountPaid), 0);
+    const totalRepaid = loans.reduce(
+      (sum, loan) => sum + Number(loan.amountPaid),
+      0,
+    );
     const totalOutstanding = loans.reduce(
       (sum, loan) => sum + Number(loan.outstandingAmount),
       0,
     );
     const totalDisbursed = loans
       .filter((loan) =>
-        [LoanStatus.DISBURSED, LoanStatus.REPAYING, LoanStatus.COMPLETED, LoanStatus.DEFAULTED].includes(
-          loan.status,
-        ),
+        [
+          LoanStatus.DISBURSED,
+          LoanStatus.REPAYING,
+          LoanStatus.COMPLETED,
+          LoanStatus.DEFAULTED,
+        ].includes(loan.status),
       )
-      .reduce((sum, loan) => sum + Number(loan.amount), 0);
+      .reduce((sum, loan) => sum + Number(loan.disbursedAmount), 0);
 
     const defaultRate =
       completedLoans.length + defaultedLoans.length > 0
-        ? (defaultedLoans.length / (completedLoans.length + defaultedLoans.length)) * 100
+        ? (defaultedLoans.length /
+            (completedLoans.length + defaultedLoans.length)) *
+          100
         : 0;
 
-    const repaymentRate = totalDisbursed > 0 ? (totalRepaid / totalDisbursed) * 100 : 0;
+    const repaymentRate =
+      totalDisbursed > 0 ? (totalRepaid / totalDisbursed) * 100 : 0;
 
     return {
       totalLoans: loans.length,
-      totalLoanAmount: loans.reduce((sum, loan) => sum + Number(loan.amount), 0),
-      pendingLoans: loans.filter((loan) => loan.status === LoanStatus.PENDING).length,
-      approvedLoans: loans.filter((loan) => loan.status === LoanStatus.APPROVED).length,
+      totalLoanAmount: loans.reduce(
+        (sum, loan) => sum + Number(loan.amount),
+        0,
+      ),
+      pendingLoans: loans.filter((loan) => loan.status === LoanStatus.PENDING)
+        .length,
+      approvedLoans: loans.filter((loan) => loan.status === LoanStatus.APPROVED)
+        .length,
       outstandingLoans: outstandingLoans.length,
       defaultedLoans: defaultedLoans.length,
       totalOutstanding,
@@ -267,10 +285,14 @@ export class LoanRepository {
       repaymentRate,
       averageLoanAmount:
         loans.length > 0
-          ? loans.reduce((sum, loan) => sum + Number(loan.amount), 0) / loans.length
+          ? loans.reduce((sum, loan) => sum + Number(loan.amount), 0) /
+            loans.length
           : 0,
       todayLoans: todayLoans.length,
-      todayAmount: todayLoans.reduce((sum, loan) => sum + Number(loan.amount), 0),
+      todayAmount: todayLoans.reduce(
+        (sum, loan) => sum + Number(loan.amount),
+        0,
+      ),
     };
   }
 }

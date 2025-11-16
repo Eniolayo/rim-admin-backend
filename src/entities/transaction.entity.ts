@@ -1,6 +1,7 @@
 import { Entity, Column, PrimaryGeneratedColumn, ManyToOne, JoinColumn, CreateDateColumn, UpdateDateColumn, Index } from 'typeorm'
 import { AdminUser } from './admin-user.entity'
 import { User } from './user.entity'
+import { Loan } from './loan.entity'
 
 export enum TransactionType {
   AIRTIME = 'airtime',
@@ -28,6 +29,7 @@ export enum PaymentMethod {
 @Index(['status'])
 @Index(['createdAt'])
 @Index(['reference'])
+@Index(['loanId'])
 export class Transaction {
   @PrimaryGeneratedColumn('uuid')
   id: string
@@ -80,6 +82,9 @@ export class Transaction {
   @Column({ type: 'jsonb', nullable: true })
   metadata: Record<string, unknown> | null
 
+  @Column({ type: 'uuid', nullable: true })
+  loanId: string | null
+
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date
 
@@ -93,5 +98,8 @@ export class Transaction {
   @ManyToOne(() => AdminUser, { eager: false, nullable: true })
   @JoinColumn({ name: 'reconciledBy' })
   reconciler: AdminUser | null
-}
 
+  @ManyToOne(() => Loan, { eager: false, nullable: true })
+  @JoinColumn({ name: 'loanId' })
+  loan: Loan | null
+}

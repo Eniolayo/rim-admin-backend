@@ -37,7 +37,9 @@
     "seed:loan": "ts-node -r tsconfig-paths/register src/database/seeds/loan.seed.ts",
     "seed:loan:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:loan",
     "seed:transaction": "ts-node -r tsconfig-paths/register src/database/seeds/transaction.seed.ts",
-    "seed:transaction:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:transaction"
+    "seed:transaction:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:transaction",
+    "seed:loan-config": "ts-node -r tsconfig-paths/register src/database/seeds/loan-config.seed.ts",
+    "seed:loan-config:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:loan-config"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",

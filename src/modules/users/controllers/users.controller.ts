@@ -73,7 +73,9 @@ export class UsersController {
     status: 400,
     description: 'Bad request - Invalid query parameters',
   })
-  findAll(@Query() queryDto: UserQueryDto): Promise<PaginatedResponseDto<UserResponseDto>> {
+  findAll(
+    @Query() queryDto: UserQueryDto,
+  ): Promise<PaginatedResponseDto<UserResponseDto>> {
     return this.usersService.findAll(queryDto);
   }
 
@@ -105,12 +107,16 @@ export class UsersController {
     status: 400,
     description: 'Bad request - Invalid query parameters',
   })
-  async export(@Res() res: Response, @Query() queryDto: UserQueryDto): Promise<void> {
+  async export(
+    @Res() res: Response,
+    @Query() queryDto: UserQueryDto,
+  ): Promise<void> {
     const users = await this.usersService.exportUsers(queryDto);
-    
+
     // CSV headers
-    const headers = 'User ID,Phone,Email,Credit Score,Total Repaid,Status,Repayment Status,Credit Limit\n';
-    
+    const headers =
+      'User ID,Phone,Email,Credit Score,Total Repaid,Status,Repayment Status,Credit Limit\n';
+
     // Format rows
     const rows = users
       .map(
@@ -118,9 +124,9 @@ export class UsersController {
           `${user.userId || ''},${user.phone || ''},${user.email || ''},${user.creditScore || 0},${user.totalRepaid || 0},${user.status || ''},${user.repaymentStatus || ''},${user.creditLimit || 0}`,
       )
       .join('\n');
-    
+
     const csv = headers + rows;
-    
+
     // Set response headers
     const timestamp = new Date().toISOString().split('T')[0];
     res.setHeader('Content-Type', 'text/csv');
@@ -128,7 +134,7 @@ export class UsersController {
       'Content-Disposition',
       `attachment; filename="users-export-${timestamp}.csv"`,
     );
-    
+
     res.send(csv);
   }
 
@@ -206,6 +212,39 @@ export class UsersController {
     @Body('status') status: UserStatus,
   ): Promise<UserResponseDto[]> {
     return this.usersService.bulkUpdateStatus(ids, status);
+  }
+
+  @Get(':id/eligible-loan-amount')
+  @ApiOperation({
+    summary: 'Get eligible loan amount for user based on credit score',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Eligible loan amount',
+    schema: {
+      type: 'object',
+      properties: {
+        eligibleAmount: { type: 'number' },
+        creditScore: { type: 'number' },
+        isFirstTimeUser: { type: 'boolean' },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  getEligibleLoanAmount(@Param('id') id: string) {
+    return this.usersService.getEligibleLoanAmount(id);
+  }
+
+  @Get(':id/credit-score/history')
+  @ApiOperation({ summary: 'Get credit score history for a user' })
+  @ApiResponse({
+    status: 200,
+    description: 'Credit score history',
+    type: 'array',
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  getCreditScoreHistory(@Param('id') id: string) {
+    return this.usersService.getCreditScoreHistory(id);
   }
 
   @Delete(':id')

@@ -21,6 +21,7 @@ import {
   RepaymentStatus,
 } from '../../../entities/user.entity';
 import { UsersCacheService } from './users-cache.service';
+import { CreditScoreService } from '../../credit-score/services/credit-score.service';
 
 @Injectable()
 export class UsersService {
@@ -29,6 +30,7 @@ export class UsersService {
     @InjectRepository(User)
     private readonly repository: Repository<User>,
     private readonly cacheService: UsersCacheService,
+    private readonly creditScoreService: CreditScoreService,
     private readonly logger: Logger,
   ) {}
 
@@ -169,7 +171,10 @@ export class UsersService {
       }
 
       this.logger.error(
-        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
         'Error finding users',
       );
       throw new BadRequestException('Error retrieving users');
@@ -188,7 +193,10 @@ export class UsersService {
     } catch (error) {
       // Cache error - fallback to database
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), userId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          userId: id,
+        },
         'Cache error, falling back to database',
       );
     }
@@ -207,7 +215,10 @@ export class UsersService {
     } catch (error) {
       // Cache error - continue without caching
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), userId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          userId: id,
+        },
         'Error caching user',
       );
     }
@@ -242,7 +253,10 @@ export class UsersService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), userId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          userId: id,
+        },
         'Error invalidating cache after user update',
       );
     }
@@ -272,7 +286,10 @@ export class UsersService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), userId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          userId: id,
+        },
         'Error invalidating cache after status update',
       );
     }
@@ -285,7 +302,10 @@ export class UsersService {
     creditLimit: number,
     autoLimitEnabled?: boolean,
   ): Promise<UserResponseDto> {
-    this.logger.log({ userId: id, creditLimit, autoLimitEnabled }, 'Updating credit limit for user');
+    this.logger.log(
+      { userId: id, creditLimit, autoLimitEnabled },
+      'Updating credit limit for user',
+    );
 
     const user = await this.userRepository.findById(id);
 
@@ -318,7 +338,10 @@ export class UsersService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), userId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          userId: id,
+        },
         'Error invalidating cache after credit limit update',
       );
     }
@@ -356,7 +379,10 @@ export class UsersService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), userIds: ids },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          userIds: ids,
+        },
         'Error invalidating cache after bulk status update',
       );
     }
@@ -385,7 +411,10 @@ export class UsersService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), userId: id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          userId: id,
+        },
         'Error invalidating cache after user deletion',
       );
     }
@@ -456,7 +485,10 @@ export class UsersService {
       }
 
       this.logger.error(
-        { error: error instanceof Error ? error.message : String(error), stack: error instanceof Error ? error.stack : undefined },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          stack: error instanceof Error ? error.stack : undefined,
+        },
         'Error exporting users',
       );
       throw new BadRequestException('Error exporting users');
@@ -475,7 +507,7 @@ export class UsersService {
   private mapToResponse(user: User): UserResponseDto {
     // Calculate credit limit based on autoLimitEnabled
     let effectiveCreditLimit = Number(user.creditLimit);
-    
+
     if (user.autoLimitEnabled) {
       effectiveCreditLimit = this.calculateCreditLimitByScore(user.creditScore);
     }
@@ -508,5 +540,34 @@ export class UsersService {
       // creditScore >= 1000
       return 3000;
     }
+  }
+
+  async getEligibleLoanAmount(id: string): Promise<{
+    eligibleAmount: number;
+    creditScore: number;
+    isFirstTimeUser: boolean;
+  }> {
+    const user = await this.userRepository.findById(id);
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    const eligibleAmount =
+      await this.creditScoreService.calculateEligibleLoanAmount(user.id);
+
+    return {
+      eligibleAmount,
+      creditScore: user.creditScore,
+      isFirstTimeUser: !user.totalLoans || user.totalLoans === 0,
+    };
+  }
+
+  async getCreditScoreHistory(id: string) {
+    const user = await this.userRepository.findById(id);
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    return this.creditScoreService.getCreditScoreHistory(user.id);
   }
 }

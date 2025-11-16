@@ -8,9 +8,16 @@ import { Loan } from '../../entities/loan.entity';
 import { UsersModule } from '../users/users.module';
 import { User } from '../../entities/user.entity';
 import { UserRepository } from '../users/repositories/user.repository';
+import { CreditScoreModule } from '../credit-score/credit-score.module';
+import { SystemConfigModule } from '../system-config/system-config.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Loan, User]), UsersModule],
+  imports: [
+    TypeOrmModule.forFeature([Loan, User]),
+    UsersModule,
+    CreditScoreModule,
+    SystemConfigModule,
+  ],
   controllers: [LoansController],
   providers: [LoansService, LoanRepository, LoansCacheService, UserRepository],
   exports: [LoansService, LoanRepository],
