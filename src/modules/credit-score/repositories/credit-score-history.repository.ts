@@ -29,4 +29,11 @@ export class CreditScoreHistoryRepository {
       order: { createdAt: 'DESC' },
     });
   }
+
+  async findByTransactionId(transactionId: string): Promise<CreditScoreHistory[]> {
+    return this.repository.find({
+      where: { transactionId },
+      order: { createdAt: 'DESC' },
+    });
+  }
 }

@@ -162,13 +162,52 @@ export class TransactionsService {
   }
 
   async reconcile(payload: CreateReconciliationDto, adminId: string): Promise<Transaction> {
+    this.logger.log(
+      {
+        transactionId: payload.transactionId,
+        adminId,
+        status: payload.status,
+        amount: payload.amount,
+      },
+      'Starting transaction reconciliation',
+    )
+
     const tx = await this.repo.findByTransactionId(payload.transactionId)
-    if (!tx) throw new NotFoundException('Transaction not found')
-    
+    if (!tx) {
+      this.logger.error(
+        { transactionId: payload.transactionId },
+        'Transaction not found during reconciliation',
+      )
+      throw new NotFoundException('Transaction not found')
+    }
+
+    this.logger.debug(
+      {
+        transactionId: tx.id,
+        currentStatus: tx.status,
+        type: tx.type,
+        loanId: tx.loanId,
+        amount: tx.amount,
+      },
+      'Retrieved transaction for reconciliation',
+    )
+
     const newStatus = payload.status ?? tx.status
     const wasCompleted = tx.status === TransactionStatus.COMPLETED
     const isNowCompleted = newStatus === TransactionStatus.COMPLETED
-    
+
+    this.logger.debug(
+      {
+        transactionId: tx.id,
+        previousStatus: tx.status,
+        newStatus,
+        wasCompleted,
+        isNowCompleted,
+        statusChanged: tx.status !== newStatus,
+      },
+      'Transaction status change analysis',
+    )
+
     const patch: Partial<Transaction> = {
       amount: payload.amount ?? tx.amount,
       status: newStatus,
@@ -176,53 +215,181 @@ export class TransactionsService {
       reconciledAt: new Date(),
       reconciledBy: adminId,
     }
+
+    this.logger.debug(
+      {
+        transactionId: tx.id,
+        patch: {
+          amount: patch.amount,
+          status: patch.status,
+          hasNotes: !!patch.notes,
+          reconciledAt: patch.reconciledAt,
+          reconciledBy: patch.reconciledBy,
+        },
+      },
+      'Applying transaction patch',
+    )
+
     await this.repo.update(tx.id, patch)
     const updated = await this.repo.findById(tx.id)
-    if (!updated) throw new NotFoundException('Transaction not found')
+    if (!updated) {
+      this.logger.error(
+        { transactionId: tx.id },
+        'Transaction not found after update',
+      )
+      throw new NotFoundException('Transaction not found')
+    }
 
-    // Award credit score if repayment transaction is being marked as completed
+    this.logger.log(
+      {
+        transactionId: updated.id,
+        status: updated.status,
+        amount: updated.amount,
+        reconciledAt: updated.reconciledAt,
+      },
+      'Transaction reconciliation completed successfully',
+    )
+
+    // Award credit score directly if repayment transaction is being marked as completed
     if (
       updated.type === TransactionType.REPAYMENT &&
       !wasCompleted &&
       isNowCompleted &&
       updated.loanId
     ) {
+      this.logger.log(
+        {
+          transactionId: updated.id,
+          loanId: updated.loanId,
+          userPhone: updated.userPhone,
+          userId: updated.userId,
+          repaymentAmount: updated.amount,
+          type: updated.type,
+          status: updated.status,
+        },
+        'Repayment transaction marked as completed - processing credit score award',
+      )
+
       try {
-        await this.creditScoreService.awardPointsForRepayment(
+        const creditScoreResult = await this.creditScoreService.awardPointsForRepayment(
           updated.id,
           updated.loanId,
+          updated.userPhone,
         )
+
         this.logger.log(
-          { transactionId: updated.id, loanId: updated.loanId },
-          'Credit score awarded for repayment',
+          {
+            transactionId: updated.id,
+            loanId: updated.loanId,
+            userId: updated.userId,
+            pointsAwarded: creditScoreResult.pointsAwarded,
+            previousScore: creditScoreResult.newScore - creditScoreResult.pointsAwarded,
+            newScore: creditScoreResult.newScore,
+            repaymentAmount: updated.amount,
+          },
+          'Credit score awarded successfully for repayment transaction',
         )
+
+        if (creditScoreResult.pointsAwarded === 0) {
+          this.logger.warn(
+            {
+              transactionId: updated.id,
+              loanId: updated.loanId,
+              reason: 'No points awarded - may be below minimum threshold or already processed',
+            },
+            'Credit score award resulted in zero points',
+          )
+        }
       } catch (error) {
-        // Log error but don't fail the reconciliation
         this.logger.error(
           {
             error: error instanceof Error ? error.message : String(error),
+            errorStack: error instanceof Error ? error.stack : undefined,
+            transactionId: updated.id,
+            loanId: updated.loanId,
+            userId: updated.userId,
+            userPhone: updated.userPhone,
+            repaymentAmount: updated.amount,
+          },
+          'Error awarding credit score for repayment transaction',
+        )
+        // Don't throw - allow transaction reconciliation to complete even if credit score award fails
+        // This ensures transaction status is updated even if scoring has issues
+      }
+    } else {
+      if (updated.type !== TransactionType.REPAYMENT) {
+        this.logger.debug(
+          {
+            transactionId: updated.id,
+            type: updated.type,
+          },
+          'Skipping credit score award - not a repayment transaction',
+        )
+      } else if (wasCompleted) {
+        this.logger.debug(
+          {
             transactionId: updated.id,
             loanId: updated.loanId,
           },
-          'Error awarding credit score for repayment',
+          'Skipping credit score award - transaction was already completed',
+        )
+      } else if (!isNowCompleted) {
+        this.logger.debug(
+          {
+            transactionId: updated.id,
+            loanId: updated.loanId,
+            newStatus,
+          },
+          'Skipping credit score award - transaction not marked as completed',
+        )
+      } else if (!updated.loanId) {
+        this.logger.debug(
+          {
+            transactionId: updated.id,
+          },
+          'Skipping credit score award - no loan ID associated with transaction',
         )
       }
     }
 
     // Invalidate cache - transaction, list and stats changed
     try {
+      this.logger.debug(
+        { transactionId: tx.id },
+        'Invalidating transaction-related caches',
+      )
+
       await Promise.all([
         this.cacheService.invalidateTransaction(tx.id),
         this.cacheService.invalidateTransactionList(),
         this.cacheService.invalidateTransactionStats(),
       ])
+
+      this.logger.debug(
+        { transactionId: tx.id },
+        'Successfully invalidated transaction-related caches',
+      )
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error), transactionId: tx.id },
+        {
+          error: error instanceof Error ? error.message : String(error),
+          errorStack: error instanceof Error ? error.stack : undefined,
+          transactionId: tx.id,
+        },
         'Error invalidating cache after transaction reconciliation',
       )
     }
+
+    this.logger.log(
+      {
+        transactionId: updated.id,
+        status: updated.status,
+        type: updated.type,
+        loanId: updated.loanId,
+      },
+      'Transaction reconciliation process completed',
+    )
 
     return updated
   }

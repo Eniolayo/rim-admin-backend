@@ -111,6 +111,14 @@ if [ $? -eq 0 ]; then
 else
   echo "   ⚠️  Warning: Transaction seed failed (may already exist)"
 fi
+echo "   Seeding credit score config data..."
+docker-compose -f docker-compose.dev.yml exec -T app npm run seed:credit-score-config
+
+if [ $? -eq 0 ]; then
+  echo "   ✅ Credit score config seed completed"
+else
+  echo "   ⚠️  Warning: Credit score config seed failed (may already exist)"
+fi
 
 echo ""
 echo "=========================================="

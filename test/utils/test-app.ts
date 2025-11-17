@@ -11,11 +11,41 @@ export interface TestApp {
 }
 
 export async function initTestApp(): Promise<TestApp> {
-  // Load test environment file FIRST - this has all required variables
-  dotenvConfig({ path: resolve(__dirname, '../../.env.test') })
+  // Load environment files to match docker-compose.dev.yml configuration
+  // 1. Load .env first (contains actual credentials from docker-compose.dev.yml)
+  // 2. Load .env.test to override with test-specific values (DB_HOST=localhost, etc.)
+  // Tests run on host machine, so DB_HOST and REDIS_HOST should be 'localhost'
+  // (not 'postgres' or 'redis' which are container names)
+  const envPath = resolve(__dirname, '../../.env')
+  const envTestPath = resolve(__dirname, '../../.env.test')
+  
+  // Load .env (may not exist, that's okay)
+  dotenvConfig({ path: envPath })
+  // Load .env.test overrides
+  dotenvConfig({ path: envTestPath })
   
   // Set NODE_ENV to test if not already set
   process.env.NODE_ENV = process.env.NODE_ENV || 'test'
+  
+  // Ensure test uses localhost for services (tests run on host, not in container)
+  if (!process.env.DB_HOST || process.env.DB_HOST === 'postgres') {
+    process.env.DB_HOST = 'localhost'
+  }
+  if (!process.env.REDIS_HOST || process.env.REDIS_HOST === 'redis') {
+    process.env.REDIS_HOST = 'localhost'
+  }
+  
+  // Set defaults from docker-compose.dev.yml if not already set
+  // These match the defaults in docker-compose.dev.yml
+  if (!process.env.DB_USERNAME) process.env.DB_USERNAME = 'postgres'
+  if (!process.env.DB_PASSWORD) process.env.DB_PASSWORD = 'postgres'
+  if (!process.env.DB_NAME) process.env.DB_NAME = 'rim_db_dev'
+  if (!process.env.DB_PORT) process.env.DB_PORT = '5432'
+  if (!process.env.REDIS_PORT) process.env.REDIS_PORT = '6379'
+  if (!process.env.JWT_SECRET) process.env.JWT_SECRET = 'dev-jwt-secret-key-min-32-chars-long'
+  if (!process.env.JWT_EXPIRATION) process.env.JWT_EXPIRATION = '12h'
+  if (!process.env.JWT_REFRESH_SECRET) process.env.JWT_REFRESH_SECRET = 'dev-refresh-secret-key-min-32-chars'
+  if (!process.env.JWT_REFRESH_EXPIRATION) process.env.JWT_REFRESH_EXPIRATION = '7d'
 
   // NOW import AppModule after test env vars are loaded
   const { AppModule } = require('../../src/app.module')

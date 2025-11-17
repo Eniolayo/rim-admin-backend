@@ -11,10 +11,29 @@ export class UserRepository {
   ) {}
 
   async findById(id: string): Promise<User | null> {
-    return this.repository.findOne({
-      where: { id },
-      relations: ['loans'],
-    });
+    try {
+      // Check if it's a UUID format (8-4-4-4-12 hex characters)
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      
+      if (uuidRegex.test(id)) {
+        // It's a UUID, search by id field
+        return this.repository.findOne({
+          where: { id },
+          relations: ['loans'],
+        });
+      } else {
+        // It's likely a custom userId, search by userId field
+        return this.repository.findOne({
+          where: { userId: id },
+          relations: ['loans'],
+        });
+      }
+    } catch (error) {
+      // Log the error for debugging
+      throw new BadRequestException(
+        `Invalid user identifier format: ${id}`,
+      );
+    }
   }
 
   async findByUserId(userId: string): Promise<User | null> {

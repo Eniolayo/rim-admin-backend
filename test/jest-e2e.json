@@ -14,5 +14,8 @@
   "detectOpenHandles": true,
   "clearMocks": true,
   "resetModules": true,
-  "restoreMocks": true
+  "restoreMocks": true,
+  "moduleNameMapper": {
+    "^src/(.*)$": "<rootDir>/../src/$1"
+  }
 }

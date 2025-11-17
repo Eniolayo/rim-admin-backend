@@ -41,6 +41,9 @@ export class CreditScoreHistory {
   @Column({ type: 'uuid', nullable: true })
   transactionId: string | null;
 
+  @Column({ type: 'jsonb', nullable: true })
+  metadata: Record<string, unknown> | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 

@@ -29,7 +29,10 @@ import {
   PaginatedResponseDto,
 } from '../dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { PermissionsGuard } from '../../auth/guards/permissions.guard';
+import { Permissions } from '../../auth/decorators/permissions.decorator';
 import { UserStatus } from '../../../entities/user.entity';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 @ApiTags('users')
 @Controller('users')
@@ -40,17 +43,29 @@ export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Post()
+  @Permissions('users', 'write')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Create a new user' })
   @ApiResponse({
     status: 201,
     description: 'User created',
     type: UserResponseDto,
   })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid input or duplicate phone number',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
   create(@Body() createUserDto: CreateUserDto): Promise<UserResponseDto> {
     return this.usersService.create(createUserDto);
   }
 
   @Get()
+  @Permissions('users', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Get all users with pagination and filters' })
   @ApiResponse({
     status: 200,
@@ -73,6 +88,10 @@ export class UsersController {
     status: 400,
     description: 'Bad request - Invalid query parameters',
   })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
   findAll(
     @Query() queryDto: UserQueryDto,
   ): Promise<PaginatedResponseDto<UserResponseDto>> {
@@ -80,17 +99,25 @@ export class UsersController {
   }
 
   @Get('stats')
+  @Permissions('users', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Get user statistics' })
   @ApiResponse({
     status: 200,
     description: 'User statistics',
     type: UserStatsDto,
   })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
   getStats(): Promise<UserStatsDto> {
     return this.usersService.getStats();
   }
 
   @Get('export')
+  @Permissions('users', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Export users to CSV' })
   @ApiResponse({
     status: 200,
@@ -106,6 +133,10 @@ export class UsersController {
   @ApiResponse({
     status: 400,
     description: 'Bad request - Invalid query parameters',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
   })
   async export(
     @Res() res: Response,
@@ -139,18 +170,51 @@ export class UsersController {
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Get a user by ID' })
+  @Permissions('users', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @ApiOperation({
+    summary: 'Get a user by ID',
+    description: 'Get user details by UUID or custom userId (e.g., USR-2025-002)'
+  })
   @ApiResponse({
     status: 200,
     description: 'User details',
     type: UserResponseDto,
   })
-  @ApiResponse({ status: 404, description: 'User not found' })
-  findOne(@Param('id') id: string): Promise<UserResponseDto> {
-    return this.usersService.findOne(id);
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid user ID format'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'User not found'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  async findOne(@Param('id') id: string): Promise<UserResponseDto> {
+    try {
+      return await this.usersService.findOne(id);
+    } catch (error) {
+      // Re-throw HTTP exceptions (they're already properly formatted)
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
+        throw error;
+      }
+
+      // Log unexpected errors
+      throw new BadRequestException(
+        'An error occurred while retrieving the user. Please try again later.',
+      );
+    }
   }
 
   @Patch(':id')
+  @Permissions('users', 'write')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Update a user' })
   @ApiResponse({
     status: 200,
@@ -158,6 +222,10 @@ export class UsersController {
     type: UserResponseDto,
   })
   @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
   update(
     @Param('id') id: string,
     @Body() updateUserDto: UpdateUserDto,
@@ -166,6 +234,8 @@ export class UsersController {
   }
 
   @Patch(':id/status')
+  @Permissions('users', 'write')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Update user status' })
   @ApiResponse({
     status: 200,
@@ -173,6 +243,10 @@ export class UsersController {
     type: UserResponseDto,
   })
   @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
   updateStatus(
     @Param('id') id: string,
     @Body('status') status: UserStatus,
@@ -181,6 +255,8 @@ export class UsersController {
   }
 
   @Patch(':id/credit-limit')
+  @Permissions('users', 'write')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Update user credit limit' })
   @ApiResponse({
     status: 200,
@@ -188,6 +264,10 @@ export class UsersController {
     type: UserResponseDto,
   })
   @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
   updateCreditLimit(
     @Param('id') id: string,
     @Body('creditLimit') creditLimit: number,
@@ -201,11 +281,17 @@ export class UsersController {
   }
 
   @Post('bulk/status')
+  @Permissions('users', 'write')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Bulk update user status' })
   @ApiResponse({
     status: 200,
     description: 'Statuses updated',
     type: [UserResponseDto],
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
   })
   bulkUpdateStatus(
     @Body('ids') ids: string[],
@@ -215,6 +301,8 @@ export class UsersController {
   }
 
   @Get(':id/eligible-loan-amount')
+  @Permissions('users', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({
     summary: 'Get eligible loan amount for user based on credit score',
   })
@@ -231,11 +319,17 @@ export class UsersController {
     },
   })
   @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
   getEligibleLoanAmount(@Param('id') id: string) {
     return this.usersService.getEligibleLoanAmount(id);
   }
 
   @Get(':id/credit-score/history')
+  @Permissions('users', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Get credit score history for a user' })
   @ApiResponse({
     status: 200,
@@ -243,15 +337,25 @@ export class UsersController {
     type: 'array',
   })
   @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
   getCreditScoreHistory(@Param('id') id: string) {
     return this.usersService.getCreditScoreHistory(id);
   }
 
   @Delete(':id')
+  @Permissions('users', 'delete')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({ summary: 'Delete a user' })
   @ApiResponse({ status: 200, description: 'User deleted' })
   @ApiResponse({ status: 404, description: 'User not found' })
-  remove(@Param('id') id: string): Promise<void> {
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  remove(@Param('id') id: string): Promise<{ message: string }> {
     return this.usersService.remove(id);
   }
 }

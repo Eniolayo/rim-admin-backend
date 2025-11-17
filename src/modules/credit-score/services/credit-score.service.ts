@@ -22,6 +22,29 @@ interface CreditScoreThreshold {
   amount: number;
 }
 
+interface RepaymentAmountTier {
+  minAmount: number;
+  maxAmount: number;
+  multiplier: number;
+}
+
+interface RepaymentDurationTier {
+  minDays: number;
+  maxDays: number;
+  multiplier: number;
+}
+
+interface RepaymentScoringConfig {
+  basePoints: number;
+  amountMultipliers: RepaymentAmountTier[];
+  durationMultipliers: RepaymentDurationTier[];
+  maxPointsPerTransaction: number;
+  enablePartialRepayments: boolean;
+  minPointsForPartialRepayment?: number;
+  fullRepaymentBonus?: number;
+  fullRepaymentFixedBonus?: number;
+}
+
 @Injectable()
 export class CreditScoreService {
   constructor(
@@ -43,9 +66,10 @@ export class CreditScoreService {
   async awardPointsForRepayment(
     transactionId: string,
     loanId: string,
+    phoneNumber?: string | null,
   ): Promise<{ pointsAwarded: number; newScore: number }> {
     this.logger.log(
-      { transactionId, loanId },
+      { transactionId, loanId, phoneNumber },
       'Processing repayment for credit score',
     );
 
@@ -79,16 +103,27 @@ export class CreditScoreService {
       throw new NotFoundException(`Loan with ID ${loanId} not found`);
     }
 
-    // Get user
-    const user = await this.userRepository.findOne({
-      where: { id: transaction.userId },
-    });
+    // Get user - try phone number first if provided, otherwise use transaction.userId
+    let user: User | null = null;
+    if (phoneNumber) {
+      user = await this.userRepository.findOne({
+        where: { phone: phoneNumber },
+      });
+    }
+    
+    if (!user && transaction.userId) {
+      user = await this.userRepository.findOne({
+        where: { id: transaction.userId },
+      });
+    }
 
     if (!user) {
       throw new NotFoundException(
-        `User with ID ${transaction.userId} not found`,
+        `User not found for transaction ${transactionId}`,
       );
     }
+
+    // TypeScript now knows user is User (not null) after the check above
 
     // Update loan amountPaid and outstandingAmount
     const repaymentAmount = Number(transaction.amount);
@@ -108,85 +143,65 @@ export class CreditScoreService {
 
     await this.loanRepository.save(loan);
 
-    // Only award points if loan is now fully repaid and wasn't completed before
-    if (loan.outstandingAmount <= 0 && !wasCompleted) {
-      // Check if points already awarded for this loan (idempotency)
-      const existingHistory = await this.creditScoreHistoryRepository
-        .findByLoanId(loanId)
-        .then((histories) =>
-          histories.find((h) => h.reason === 'loan_completed'),
-        );
+    const isFullRepayment = loan.outstandingAmount <= 0;
 
-      if (existingHistory) {
-        this.logger.warn(
-          { loanId },
-          'Credit score already awarded for this loan',
-        );
-        return {
-          pointsAwarded: existingHistory.pointsAwarded,
-          newScore: existingHistory.newScore,
-        };
-      }
-
-      // Get points per loan completion from config
-      // Default: 100 points per completed loan
-      const pointsPerCompletion =
-        await this.systemConfigService.getValue<number>(
-          'credit_score',
-          'points_per_loan_completion',
-          100,
-        );
-
-      // Award points
-      const previousScore = user.creditScore;
-      const newScore = previousScore + pointsPerCompletion;
-      user.creditScore = newScore;
-
-      await this.userRepository.save(user);
-
-      // Create history record
-      await this.creditScoreHistoryRepository.create({
-        userId: user.id,
-        previousScore,
-        newScore,
-        pointsAwarded: pointsPerCompletion,
-        reason: 'loan_completed',
-        loanId,
-        transactionId,
-      });
-
-      this.logger.log(
-        {
-          userId: user.id,
-          loanId,
-          transactionId,
-          pointsAwarded: pointsPerCompletion,
-          previousScore,
-          newScore,
-        },
-        'Credit score awarded for completed loan',
+    const existingByTransaction = await this.creditScoreHistoryRepository
+      .findByTransactionId(transactionId);
+    if (existingByTransaction.length > 0) {
+      const last = existingByTransaction[0];
+      this.logger.warn(
+        { transactionId },
+        'Credit score already awarded for this transaction',
       );
-
-      return {
-        pointsAwarded: pointsPerCompletion,
-        newScore,
-      };
+      return { pointsAwarded: last.pointsAwarded, newScore: last.newScore };
     }
 
-    // Loan not fully repaid yet, no points awarded
-    this.logger.debug(
-      {
-        loanId,
-        outstandingAmount: loan.outstandingAmount,
-        wasCompleted,
-      },
-      'Loan not fully repaid, no points awarded',
+    const calculationResult = await this.calculatePointsForRepayment(
+      repaymentAmount,
+      Number(loan.amountDue),
+      loan.disbursedAt || loan.createdAt,
+      transaction.reconciledAt || transaction.updatedAt,
+      isFullRepayment,
     );
 
-    return {
-      pointsAwarded: 0,
-      newScore: user.creditScore,
-    };
+    const points = calculationResult.points;
+
+    if (points <= 0) {
+      return { pointsAwarded: 0, newScore: user.creditScore };
+    }
+
+    const previousScore = user.creditScore;
+    const newScore = previousScore + points;
+    user.creditScore = newScore;
+    await this.userRepository.save(user);
+
+    const reason = isFullRepayment && !wasCompleted ? 'loan_completed' : 'partial_repayment';
+
+    await this.creditScoreHistoryRepository.create({
+      userId: user.id,
+      previousScore,
+      newScore,
+      pointsAwarded: points,
+      reason,
+      loanId,
+      transactionId,
+      metadata: calculationResult.metadata,
+    });
+
+    this.logger.log(
+      {
+        userId: user.id,
+        loanId,
+        transactionId,
+        pointsAwarded: points,
+        previousScore,
+        newScore,
+        reason,
+      },
+      'Credit score awarded for repayment',
+    );
+
+    return { pointsAwarded: points, newScore };
   }
 
   /**
@@ -424,5 +439,136 @@ export class CreditScoreService {
    */
   async getCreditScoreHistory(userId: string): Promise<CreditScoreHistory[]> {
     return this.creditScoreHistoryRepository.findByUserId(userId);
+  }
+
+  private async getRepaymentScoringConfig(): Promise<RepaymentScoringConfig> {
+    const defaultConfig: RepaymentScoringConfig = {
+      basePoints: 50,
+      amountMultipliers: [
+        { minAmount: 0, maxAmount: 1000, multiplier: 0.5 },
+        { minAmount: 1001, maxAmount: 5000, multiplier: 1.0 },
+        { minAmount: 5001, maxAmount: 10000, multiplier: 1.5 },
+        { minAmount: 10001, maxAmount: 999999, multiplier: 2.0 },
+      ],
+      durationMultipliers: [
+        { minDays: 0, maxDays: 7, multiplier: 2.0 },
+        { minDays: 8, maxDays: 14, multiplier: 1.5 },
+        { minDays: 15, maxDays: 30, multiplier: 1.0 },
+        { minDays: 31, maxDays: 60, multiplier: 0.75 },
+        { minDays: 61, maxDays: 999, multiplier: 0.5 },
+      ],
+      maxPointsPerTransaction: 500,
+      enablePartialRepayments: true,
+      minPointsForPartialRepayment: 5,
+    };
+
+    try {
+      const config = await this.systemConfigService.getValue<RepaymentScoringConfig>(
+        'credit_score',
+        'repayment_scoring',
+        defaultConfig,
+      );
+      return config || defaultConfig;
+    } catch {
+      this.logger.warn({}, 'Using default repayment scoring config');
+      return defaultConfig;
+    }
+  }
+
+  private getAmountMultiplier(amount: number, tiers: RepaymentAmountTier[]): number {
+    const sorted = [...tiers].sort((a, b) => a.minAmount - b.minAmount);
+    for (const tier of sorted) {
+      if (amount >= tier.minAmount && amount <= tier.maxAmount) return tier.multiplier;
+    }
+    if (sorted.length > 0) return sorted[sorted.length - 1].multiplier;
+    return 1;
+  }
+
+  private getDurationMultiplier(days: number, tiers: RepaymentDurationTier[]): number {
+    const sorted = [...tiers].sort((a, b) => a.minDays - b.minDays);
+    for (const tier of sorted) {
+      if (days >= tier.minDays && days <= tier.maxDays) return tier.multiplier;
+    }
+    if (sorted.length > 0) return sorted[sorted.length - 1].multiplier;
+    return 1;
+  }
+
+  async calculatePointsForRepayment(
+    repaymentAmount: number,
+    loanAmount: number,
+    disbursedAt: Date,
+    repaidAt: Date,
+    isFullRepayment: boolean,
+  ): Promise<{ points: number; metadata: Record<string, unknown> }> {
+    if (!repaymentAmount || repaymentAmount <= 0) {
+      return { points: 0, metadata: { repaymentAmount, reason: 'invalid_amount' } };
+    }
+    
+    const config = await this.getRepaymentScoringConfig();
+    const amountMultiplier = this.getAmountMultiplier(repaymentAmount, config.amountMultipliers);
+    const durationMs = Math.abs(new Date(repaidAt).getTime() - new Date(disbursedAt).getTime());
+    const durationDays = Math.floor(durationMs / (1000 * 60 * 60 * 24));
+    const durationMultiplier = this.getDurationMultiplier(durationDays, config.durationMultipliers);
+    
+    let calculatedPoints = config.basePoints * amountMultiplier * durationMultiplier;
+    const repaymentPercentage = loanAmount > 0 ? repaymentAmount / loanAmount : 0;
+    let finalPoints = calculatedPoints;
+    
+    if (config.enablePartialRepayments && !isFullRepayment) {
+      finalPoints = calculatedPoints * repaymentPercentage;
+      if (config.minPointsForPartialRepayment && finalPoints < config.minPointsForPartialRepayment) {
+        return {
+          points: 0,
+          metadata: {
+            repaymentAmount,
+            loanAmount,
+            durationDays,
+            amountMultiplier,
+            durationMultiplier,
+            basePoints: config.basePoints,
+            calculatedPoints,
+            finalPoints,
+            isPartialRepayment: true,
+            repaymentPercentage,
+            reason: 'below_minimum_threshold',
+            minPointsForPartialRepayment: config.minPointsForPartialRepayment,
+          },
+        };
+      }
+    }
+    
+    if (isFullRepayment) {
+      if (config.fullRepaymentBonus && config.fullRepaymentBonus > 0) {
+        finalPoints = finalPoints * config.fullRepaymentBonus;
+      }
+      if (config.fullRepaymentFixedBonus && config.fullRepaymentFixedBonus > 0) {
+        finalPoints = finalPoints + config.fullRepaymentFixedBonus;
+      }
+    }
+    
+    if (config.maxPointsPerTransaction && finalPoints > config.maxPointsPerTransaction) {
+      finalPoints = config.maxPointsPerTransaction;
+    }
+    
+    const roundedPoints = Math.round(finalPoints);
+    
+    return {
+      points: roundedPoints,
+      metadata: {
+        repaymentAmount,
+        loanAmount,
+        durationDays,
+        amountMultiplier,
+        durationMultiplier,
+        basePoints: config.basePoints,
+        calculatedPoints,
+        finalPoints: roundedPoints,
+        isPartialRepayment: !isFullRepayment,
+        repaymentPercentage: !isFullRepayment ? repaymentPercentage : 1,
+        fullRepaymentBonus: isFullRepayment && config.fullRepaymentBonus ? config.fullRepaymentBonus : undefined,
+        fullRepaymentFixedBonus: isFullRepayment && config.fullRepaymentFixedBonus ? config.fullRepaymentFixedBonus : undefined,
+        capped: config.maxPointsPerTransaction && finalPoints >= config.maxPointsPerTransaction,
+      },
+    };
   }
 }

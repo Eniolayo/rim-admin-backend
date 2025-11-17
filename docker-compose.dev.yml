@@ -58,7 +58,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-rim_db_dev}
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-key-min-32-chars-long}
-      JWT_EXPIRATION: ${JWT_EXPIRATION:-1h}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-12h}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-key-min-32-chars}
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
       REDIS_HOST: redis

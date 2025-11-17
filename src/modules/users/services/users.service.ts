@@ -22,6 +22,12 @@ import {
 } from '../../../entities/user.entity';
 import { UsersCacheService } from './users-cache.service';
 import { CreditScoreService } from '../../credit-score/services/credit-score.service';
+import { SystemConfigService } from '../../system-config/services/system-config.service';
+
+interface CreditScoreThreshold {
+  score: number;
+  amount: number;
+}
 
 @Injectable()
 export class UsersService {
@@ -31,23 +37,100 @@ export class UsersService {
     private readonly repository: Repository<User>,
     private readonly cacheService: UsersCacheService,
     private readonly creditScoreService: CreditScoreService,
+    private readonly systemConfigService: SystemConfigService,
     private readonly logger: Logger,
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
-    this.logger.log('Creating new user');
+    this.logger.log({ phone: createUserDto.phone }, 'Creating new user');
+
+    // Check if a user with this phone number already exists
+    const existingUser = await this.userRepository.findByPhone(
+      createUserDto.phone,
+    );
+    if (existingUser) {
+      this.logger.warn(
+        { phone: createUserDto.phone, existingUserId: existingUser.userId },
+        'Attempted to create user with duplicate phone number',
+      );
+      throw new BadRequestException(
+        `A user with phone number "${createUserDto.phone}" already exists. Phone numbers must be unique.`,
+      );
+    }
 
     // Generate userId
     const userId = await this.generateUserId();
 
+    // Get first-time user default credit score from system config
+    let creditScore = 0;
+    try {
+      creditScore = await this.systemConfigService.getValue<number>(
+        'credit_score',
+        'first_timer_default_score',
+        0,
+      );
+      this.logger.debug(
+        { creditScore },
+        'Using first-time user default credit score',
+      );
+    } catch (error) {
+      this.logger.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Error getting first_timer_default_score, using default 0',
+      );
+      creditScore = 0;
+    }
+
+    // Calculate credit limit from thresholds based on credit score
+    let creditLimit = 0;
+    try {
+      const thresholdsJson = await this.systemConfigService.getValue<
+        CreditScoreThreshold[]
+      >('credit_score', 'thresholds', [
+        { score: 0, amount: 500 },
+        { score: 1000, amount: 1000 },
+      ]);
+
+      // Find highest threshold user qualifies for
+      let calculatedLimit = 500; // Default minimum
+
+      // Sort thresholds by score descending
+      const sortedThresholds = [...thresholdsJson].sort(
+        (a, b) => b.score - a.score,
+      );
+
+      for (const threshold of sortedThresholds) {
+        if (creditScore >= threshold.score) {
+          calculatedLimit = threshold.amount;
+          break;
+        }
+      }
+
+      creditLimit = calculatedLimit;
+      this.logger.debug(
+        { creditScore, creditLimit },
+        'Calculated credit limit from thresholds',
+      );
+    } catch (error) {
+      this.logger.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Error getting thresholds, using default 0',
+      );
+      creditLimit = 0;
+    }
+
     const user = this.repository.create({
       ...createUserDto,
       userId,
-      creditScore: createUserDto.creditScore ?? 0,
-      creditLimit: createUserDto.creditLimit ?? 0,
+      creditScore, // Use auto-calculated value, ignore if provided in DTO
+      creditLimit, // Use auto-calculated value, ignore if provided in DTO
       autoLimitEnabled: createUserDto.autoLimitEnabled ?? false,
       status: createUserDto.status ?? UserStatus.ACTIVE,
-      repaymentStatus: createUserDto.repaymentStatus ?? RepaymentStatus.PENDING,
+      repaymentStatus: RepaymentStatus.COMPLETED, // New users always start with Completed status
       totalRepaid: 0,
       totalLoans: 0,
     });
@@ -184,46 +267,93 @@ export class UsersService {
   async findOne(id: string): Promise<UserResponseDto> {
     this.logger.debug({ userId: id }, 'Finding user');
 
-    // Try to get from cache
+    // Validate input
+    if (!id || typeof id !== 'string' || id.trim().length === 0) {
+      throw new BadRequestException('User ID is required and must be a non-empty string');
+    }
+
+    const trimmedId = id.trim();
+
     try {
-      const cached = await this.cacheService.getUser(id);
-      if (cached) {
-        return cached;
+      // Try to get from cache
+      try {
+        const cached = await this.cacheService.getUser(trimmedId);
+        if (cached) {
+          return cached;
+        }
+      } catch (error) {
+        // Cache error - fallback to database
+        this.logger.warn(
+          {
+            error: error instanceof Error ? error.message : String(error),
+            userId: trimmedId,
+          },
+          'Cache error, falling back to database',
+        );
       }
+
+      // Find user by ID (handles both UUID and custom userId)
+      const user = await this.userRepository.findById(trimmedId);
+
+      if (!user) {
+        this.logger.warn({ userId: trimmedId }, 'User not found');
+        throw new NotFoundException(`User with ID "${trimmedId}" not found`);
+      }
+
+      const result = this.mapToResponse(user);
+
+      // Cache the result
+      try {
+        await this.cacheService.setUser(trimmedId, result);
+      } catch (error) {
+        // Cache error - continue without caching
+        this.logger.warn(
+          {
+            error: error instanceof Error ? error.message : String(error),
+            userId: trimmedId,
+          },
+          'Error caching user',
+        );
+      }
+
+      return result;
     } catch (error) {
-      // Cache error - fallback to database
-      this.logger.warn(
+      // Re-throw known exceptions
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+
+      // Handle database errors
+      if (error && typeof error === 'object' && 'code' in error) {
+        const dbError = error as { code: string; message?: string };
+        
+        if (dbError.code === '22P02') {
+          // PostgreSQL invalid UUID format error
+          this.logger.error(
+            { error: dbError.message, userId: trimmedId },
+            'Invalid user ID format',
+          );
+          throw new BadRequestException(
+            `Invalid user ID format: "${trimmedId}". Please provide a valid UUID or user ID (e.g., USR-2025-002).`,
+          );
+        }
+      }
+
+      // Log unexpected errors
+      this.logger.error(
         {
           error: error instanceof Error ? error.message : String(error),
-          userId: id,
+          stack: error instanceof Error ? error.stack : undefined,
+          userId: trimmedId,
         },
-        'Cache error, falling back to database',
+        'Error finding user',
+      );
+
+      // Return a generic error to avoid exposing internal details
+      throw new BadRequestException(
+        `Unable to retrieve user with ID "${trimmedId}". Please verify the ID and try again.`,
       );
     }
-
-    const user = await this.userRepository.findById(id);
-
-    if (!user) {
-      throw new NotFoundException(`User with ID ${id} not found`);
-    }
-
-    const result = this.mapToResponse(user);
-
-    // Cache the result
-    try {
-      await this.cacheService.setUser(id, result);
-    } catch (error) {
-      // Cache error - continue without caching
-      this.logger.warn(
-        {
-          error: error instanceof Error ? error.message : String(error),
-          userId: id,
-        },
-        'Error caching user',
-      );
-    }
-
-    return result;
   }
 
   async update(
@@ -390,7 +520,7 @@ export class UsersService {
     return users.map((user) => this.mapToResponse(user));
   }
 
-  async remove(id: string): Promise<void> {
+  async remove(id: string): Promise<{ message: string }> {
     this.logger.log({ userId: id }, 'Removing user');
 
     const user = await this.userRepository.findById(id);
@@ -400,6 +530,7 @@ export class UsersService {
     }
 
     await this.userRepository.delete(id);
+    this.logger.log({ userId: id }, 'User deleted');
 
     // Invalidate cache - user, list, and stats changed
     try {
@@ -408,6 +539,7 @@ export class UsersService {
         this.cacheService.invalidateUserList(),
         this.cacheService.invalidateUserStats(),
       ]);
+      return { message: 'User deleted successfully' };
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
@@ -417,6 +549,7 @@ export class UsersService {
         },
         'Error invalidating cache after user deletion',
       );
+      return { message: 'User deleted successfully' };
     }
   }
 
