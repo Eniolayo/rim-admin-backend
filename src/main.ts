@@ -32,17 +32,17 @@ async function bootstrap(): Promise<void> {
   // Global prefix
   app.setGlobalPrefix(apiPrefix);
 
-  // Global validation pipe
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+  // Remove this duplicate ValidationPipe - it's already in app.module.ts
+  // app.useGlobalPipes(
+  //   new ValidationPipe({
+  //     whitelist: true,
+  //     forbidNonWhitelisted: true,
+  //     transform: true,
+  //     transformOptions: {
+  //       enableImplicitConversion: true,
+  //     },
+  //   }),
+  // );
 
   const port = configService.get<number>('app.port', 3000);
 

@@ -18,6 +18,7 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:e2e:credit-score": "jest --config ./test/jest-e2e.json --testPathPatterns=credit-score",
     "migration:generate": "typeorm-ts-node-commonjs migration:generate -d ormconfig.ts",
     "migration:run": "typeorm-ts-node-commonjs migration:run -d ormconfig.ts",
     "migration:revert": "typeorm-ts-node-commonjs migration:revert -d ormconfig.ts",
@@ -37,9 +38,14 @@
     "seed:loan": "ts-node -r tsconfig-paths/register src/database/seeds/loan.seed.ts",
     "seed:loan:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:loan",
     "seed:transaction": "ts-node -r tsconfig-paths/register src/database/seeds/transaction.seed.ts",
-    "seed:transaction:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:transaction"
+    "seed:transaction:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:transaction",
+    "seed:loan-config": "ts-node -r tsconfig-paths/register src/database/seeds/loan-config.seed.ts",
+    "seed:loan-config:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:loan-config",
+    "seed:credit-score-config": "ts-node -r tsconfig-paths/register src/database/seeds/credit-score-config.seed.ts",
+    "seed:credit-score-config:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:credit-score-config"
   },
   "dependencies": {
+    "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^3.2.0",
     "@nestjs/core": "^11.0.1",
@@ -50,6 +56,7 @@
     "@nestjs/typeorm": "^10.0.2",
     "@types/ioredis": "^4.28.10",
     "bcrypt": "^5.1.1",
+    "bullmq": "^5.63.2",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
     "ioredis": "^5.8.2",

@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger'
-import { IsEnum, IsString } from 'class-validator'
+import { IsEnum, IsString, IsOptional } from 'class-validator'
 import { AdminUserStatus } from '../../../entities/admin-user.entity'
 
 export class AdminUserResponseDto {
@@ -41,15 +41,18 @@ export class UpdateAdminStatusDto {
 }
 
 export class AdminUserFiltersDto {
-  @ApiProperty({ required: false })
+  @ApiProperty({ required: false, example: 'Support Agent', description: 'Filter by role name (case-insensitive)' })
+  @IsOptional()
   @IsString()
   role?: string
 
-  @ApiProperty({ required: false })
-  @IsString()
-  status?: string
+  @ApiProperty({ required: false, enum: AdminUserStatus, example: AdminUserStatus.ACTIVE, description: 'Filter by user status' })
+  @IsOptional()
+  @IsEnum(AdminUserStatus, { message: 'Status must be one of: active, inactive, suspended' })
+  status?: AdminUserStatus
 
-  @ApiProperty({ required: false })
+  @ApiProperty({ required: false, example: 'john@example.com', description: 'Search by username or email (case-insensitive)' })
+  @IsOptional()
   @IsString()
   search?: string
 }

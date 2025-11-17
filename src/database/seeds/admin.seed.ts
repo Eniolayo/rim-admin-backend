@@ -1,4 +1,5 @@
 import * as bcrypt from 'bcrypt';
+import { DataSource } from 'typeorm';
 import dataSource from '../data-source';
 import { AdminRole, Permission } from '../../entities/admin-role.entity';
 import { AdminUser, AdminUserStatus } from '../../entities/admin-user.entity';
@@ -20,7 +21,7 @@ interface UserSeedData {
 
 const rolesToSeed: RoleSeedData[] = [
   {
-    name: 'Super Admin',
+    name: 'super_Admin',
     description: 'Full system access with all permissions',
     permissions: [
       { resource: 'users', actions: ['read', 'write', 'delete'] },
@@ -32,16 +33,7 @@ const rolesToSeed: RoleSeedData[] = [
     ],
   },
   {
-    name: 'Support Agent',
-    description: 'Can manage support tickets and view user information',
-    permissions: [
-      { resource: 'users', actions: ['read'] },
-      { resource: 'support', actions: ['read', 'write'] },
-      { resource: 'loans', actions: ['read'] },
-    ],
-  },
-  {
-    name: 'Finance Officer',
+    name: 'Admin',
     description: 'Can manage loans, transactions, and financial reports',
     permissions: [
       { resource: 'loans', actions: ['read', 'write'] },
@@ -49,34 +41,28 @@ const rolesToSeed: RoleSeedData[] = [
       { resource: 'users', actions: ['read'] },
     ],
   },
+  {
+    name: 'moderator',
+    description: 'Can manage support tickets and view user information',
+    permissions: [
+      { resource: 'users', actions: ['read'] },
+      { resource: 'support', actions: ['read', 'write'] },
+      { resource: 'loans', actions: ['read'] },
+    ],
+  },
 ];
 
 const usersToSeed: UserSeedData[] = [
   {
-    username: 'superadmin',
-    email: 'superadmin@test.com',
-    roleName: 'Super Admin',
-  },
-  {
-    username: 'support1',
-    email: 'support1@test.com',
-    roleName: 'Support Agent',
-  },
-  {
-    username: 'support2',
-    email: 'support2@test.com',
-    roleName: 'Support Agent',
-  },
-  {
-    username: 'finance',
-    email: 'finance@test.com',
-    roleName: 'Finance Officer',
+    username: 'superadmin33',
+    email: 'superadmin33@test33.com',
+    roleName: 'super_Admin',
   },
 ];
 
-async function seedAdminRoles(): Promise<Map<string, AdminRole>> {
+async function seedAdminRoles(dataSourceToUse: DataSource): Promise<Map<string, AdminRole>> {
   console.log('🌱 Seeding AdminRoles...');
-  const roleRepository = dataSource.getRepository(AdminRole);
+  const roleRepository = dataSourceToUse.getRepository(AdminRole);
   const roleMap = new Map<string, AdminRole>();
 
   for (const roleData of rolesToSeed) {
@@ -105,9 +91,9 @@ async function seedAdminRoles(): Promise<Map<string, AdminRole>> {
   return roleMap;
 }
 
-async function seedAdminUsers(roleMap: Map<string, AdminRole>): Promise<void> {
+async function seedAdminUsers(roleMap: Map<string, AdminRole>, dataSourceToUse: DataSource): Promise<void> {
   console.log('🌱 Seeding AdminUsers...');
-  const userRepository = dataSource.getRepository(AdminUser);
+  const userRepository = dataSourceToUse.getRepository(AdminUser);
   const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, SALT_ROUNDS);
 
   let createdCount = 0;
@@ -170,28 +156,33 @@ async function seedAdminUsers(roleMap: Map<string, AdminRole>): Promise<void> {
   );
 }
 
-async function runSeed(): Promise<void> {
+async function runSeed(dataSourceParam?: DataSource): Promise<void> {
+  const dataSourceToUse = dataSourceParam || dataSource;
   console.log('==========================================');
   console.log('Admin Seeding Script');
   console.log('==========================================\n');
 
   try {
     // Initialize DataSource
-    if (!dataSource.isInitialized) {
+    if (!dataSourceToUse.isInitialized) {
       console.log('📡 Connecting to database...');
-      await dataSource.initialize();
+      await dataSourceToUse.initialize();
       console.log('✅ Database connected\n');
     }
 
     // Seed roles first
-    const roleMap = await seedAdminRoles();
+    const roleMap = await seedAdminRoles(dataSourceToUse);
 
     // Seed users
-    await seedAdminUsers(roleMap);
+    await seedAdminUsers(roleMap, dataSourceToUse);
 
     console.log('==========================================');
     console.log('✅ Seeding completed successfully!');
     console.log('==========================================');
+    console.log('\n📝 Seeded Admin Roles:');
+    rolesToSeed.forEach((role) => {
+      console.log(`   - ${role.name}`);
+    });
     console.log('\n📝 Seeded Admin Users:');
     usersToSeed.forEach((user) => {
       console.log(`   - ${user.email} (${user.username}) - ${user.roleName}`);
@@ -203,8 +194,8 @@ async function runSeed(): Promise<void> {
     throw error;
   } finally {
     // Close DataSource connection
-    if (dataSource.isInitialized) {
-      await dataSource.destroy();
+    if (dataSourceToUse.isInitialized) {
+      await dataSourceToUse.destroy();
       console.log('📡 Database connection closed');
     }
   }

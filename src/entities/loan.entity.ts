@@ -54,6 +54,9 @@ export class Loan {
   @Column({ type: 'decimal', precision: 15, scale: 2 })
   amount: number;
 
+  @Column({ type: 'decimal', precision: 15, scale: 2 })
+  disbursedAmount: number;
+
   @Column({
     type: 'enum',
     enum: LoanStatus,

@@ -24,8 +24,8 @@ export enum RepaymentStatus {
 
 @Entity('USERS')
 @Index(['userId'], { unique: true })
-@Index(['phone'])
-@Index(['email'])
+@Index(['phone'], { unique: true })
+@Index(['email'], { unique: true })
 @Index(['status'])
 export class User {
   @PrimaryGeneratedColumn('uuid')
@@ -34,10 +34,10 @@ export class User {
   @Column({ type: 'varchar', length: 255, unique: true })
   userId: string;
 
-  @Column({ type: 'varchar', length: 255 })
+  @Column({ type: 'varchar', length: 255, unique: true })
   phone: string;
 
-  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true, unique: true })
   email: string | null;
 
   @Column({ type: 'integer', default: 0 })

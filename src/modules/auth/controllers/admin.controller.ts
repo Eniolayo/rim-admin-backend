@@ -12,7 +12,7 @@ import { AuthService } from '../services/auth.service';
 import { VerifyCodeDto, TokenResponseDto } from '../dto';
 
 @ApiTags('admin')
-@Controller('admin')
+@Controller('admin/mfa')
 export class AdminController {
   constructor(private readonly authService: AuthService) {}
 

@@ -471,8 +471,18 @@ const loansToSeed: LoanSeedData[] = [
   },
 ];
 
-function calculateAmountDue(amount: number, interestRate: number): number {
-  return amount * (1 + interestRate / 100);
+function calculateDisbursedAmount(
+  amount: number,
+  interestRate: number,
+): number {
+  // Interest is deducted upfront from the loan amount
+  const interest = (amount * interestRate) / 100;
+  return amount - interest;
+}
+
+function calculateAmountDue(amount: number): number {
+  // User repays the original amount (not amount + interest)
+  return amount;
 }
 
 function calculateOutstandingAmount(
@@ -510,9 +520,7 @@ async function seedLoans(): Promise<void> {
   });
 
   if (users.length === 0) {
-    console.log(
-      '  ⚠️  No users found in database. Please seed users first.',
-    );
+    console.log('  ⚠️  No users found in database. Please seed users first.');
     return;
   }
 
@@ -540,10 +548,11 @@ async function seedLoans(): Promise<void> {
       continue;
     }
 
-    const amountDue = calculateAmountDue(
+    const disbursedAmount = calculateDisbursedAmount(
       loanData.amount,
       loanData.interestRate,
     );
+    const amountDue = calculateAmountDue(loanData.amount);
     const outstandingAmount = calculateOutstandingAmount(
       amountDue,
       loanData.amountPaid,
@@ -560,6 +569,7 @@ async function seedLoans(): Promise<void> {
       userPhone: user.phone,
       userEmail: user.email,
       amount: loanData.amount,
+      disbursedAmount: disbursedAmount,
       status: loanData.status,
       network: loanData.network,
       interestRate: loanData.interestRate,
@@ -572,9 +582,7 @@ async function seedLoans(): Promise<void> {
       approvedBy: null,
       rejectedAt: loanData.rejectedAt,
       rejectedBy: null,
-      rejectionReason: loanData.rejectedAt
-        ? 'Insufficient credit score'
-        : null,
+      rejectionReason: loanData.rejectedAt ? 'Insufficient credit score' : null,
       disbursedAt:
         loanData.status === LoanStatus.DISBURSED ||
         loanData.status === LoanStatus.REPAYING ||
@@ -645,4 +653,3 @@ if (require.main === module) {
 }
 
 export { runSeed };
-

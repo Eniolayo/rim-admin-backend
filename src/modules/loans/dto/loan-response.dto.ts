@@ -17,8 +17,14 @@ export class LoanResponseDto {
   @ApiPropertyOptional({ description: 'User email' })
   userEmail: string | null;
 
-  @ApiProperty({ description: 'Loan amount' })
+  @ApiProperty({ description: 'Loan amount (requested amount)' })
   amount: number;
+
+  @ApiProperty({
+    description:
+      'Disbursed amount (amount - interest, what user actually receives)',
+  })
+  disbursedAmount: number;
 
   @ApiProperty({ description: 'Loan status', enum: LoanStatus })
   status: LoanStatus;

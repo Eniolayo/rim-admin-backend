@@ -18,6 +18,12 @@ export class AdminRoleRepository {
     return this.repository.findOne({ where: { id } })
   }
 
+  async findByName(name: string): Promise<AdminRole | null> {
+    return this.repository.findOne({
+      where: { name },
+    })
+  }
+
   async isNameTaken(name: string, excludeId?: string): Promise<boolean> {
     const qb = this.repository.createQueryBuilder('role').where('role.name = :name', { name })
     if (excludeId) qb.andWhere('role.id != :excludeId', { excludeId })
