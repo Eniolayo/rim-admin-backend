@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/bin/sh
 
 # Script: prod-seed.sh
 # Purpose: Run migrations and seed all data in production environment
-# Platform: Mac/Linux
-# Usage: ./prod-seed.sh
+# Platform: Mac/Linux (POSIX-compliant for Alpine Linux)
+# Usage: ./prod-seed.sh or sh ./prod-seed.sh
 
 set -e
 
@@ -21,18 +21,23 @@ fi
 
 # Check for required environment variables
 echo "🔍 Checking environment variables..."
-REQUIRED_VARS=("DB_HOST" "DB_PORT" "DB_USERNAME" "DB_PASSWORD" "DB_NAME")
-MISSING_VARS=()
+REQUIRED_VARS="DB_HOST DB_PORT DB_USERNAME DB_PASSWORD DB_NAME"
+MISSING_VARS=""
 
-for var in "${REQUIRED_VARS[@]}"; do
-  if [ -z "${!var}" ]; then
-    MISSING_VARS+=("$var")
+for var in $REQUIRED_VARS; do
+  eval "value=\$$var"
+  if [ -z "$value" ]; then
+    if [ -z "$MISSING_VARS" ]; then
+      MISSING_VARS="$var"
+    else
+      MISSING_VARS="$MISSING_VARS $var"
+    fi
   fi
 done
 
-if [ ${#MISSING_VARS[@]} -ne 0 ]; then
+if [ -n "$MISSING_VARS" ]; then
   echo "❌ Error: Missing required environment variables:"
-  for var in "${MISSING_VARS[@]}"; do
+  for var in $MISSING_VARS; do
     echo "   - $var"
   done
   echo ""
@@ -44,12 +49,12 @@ echo "✅ Environment variables check passed"
 echo ""
 
 # Check if Node.js and npm are available
-if ! command -v node &> /dev/null; then
+if ! command -v node > /dev/null 2>&1; then
   echo "❌ Error: Node.js is not installed or not in PATH"
   exit 1
 fi
 
-if ! command -v npm &> /dev/null; then
+if ! command -v npm > /dev/null 2>&1; then
   echo "❌ Error: npm is not installed or not in PATH"
   exit 1
 fi
@@ -67,8 +72,8 @@ fi
 
 # Check database connection
 echo "🔍 Testing database connection..."
-if command -v psql &> /dev/null; then
-  if PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USERNAME}" -d "${DB_NAME}" -c "SELECT 1;" > /dev/null 2>&1; then
+if command -v psql > /dev/null 2>&1; then
+  if PGPASSWORD="$DB_PASSWORD" psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USERNAME" -d "$DB_NAME" -c "SELECT 1;" > /dev/null 2>&1; then
     echo "✅ Database connection successful"
   else
     echo "⚠️  Warning: Could not verify database connection with psql"
@@ -162,7 +167,7 @@ fi
 
 echo ""
 echo "=========================================="
-if [ $SEED_ERRORS -eq 0 ]; then
+if [ "$SEED_ERRORS" -eq 0 ]; then
   echo "✅ Seeding Complete - All seeds successful!"
 else
   echo "⚠️  Seeding Complete - $SEED_ERRORS seed(s) had warnings"
