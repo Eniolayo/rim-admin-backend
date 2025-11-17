@@ -269,7 +269,9 @@ export class UsersService {
 
     // Validate input
     if (!id || typeof id !== 'string' || id.trim().length === 0) {
-      throw new BadRequestException('User ID is required and must be a non-empty string');
+      throw new BadRequestException(
+        'User ID is required and must be a non-empty string',
+      );
     }
 
     const trimmedId = id.trim();
@@ -319,14 +321,17 @@ export class UsersService {
       return result;
     } catch (error) {
       // Re-throw known exceptions
-      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+      if (
+        error instanceof NotFoundException ||
+        error instanceof BadRequestException
+      ) {
         throw error;
       }
 
       // Handle database errors
       if (error && typeof error === 'object' && 'code' in error) {
         const dbError = error as { code: string; message?: string };
-        
+
         if (dbError.code === '22P02') {
           // PostgreSQL invalid UUID format error
           this.logger.error(
@@ -700,6 +705,44 @@ export class UsersService {
       eligibleAmount,
       creditScore: user.creditScore,
       isFirstTimeUser: !user.totalLoans || user.totalLoans === 0,
+    };
+  }
+
+  async getCalculatedInterestRate(id: string): Promise<{
+    interestRate: number;
+    creditScore: number;
+  }> {
+    const user = await this.userRepository.findById(id);
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    const interestRate =
+      await this.creditScoreService.calculateInterestRateByCreditScore(user.id);
+
+    return {
+      interestRate,
+      creditScore: user.creditScore,
+    };
+  }
+
+  async getCalculatedRepaymentPeriod(id: string): Promise<{
+    repaymentPeriod: number;
+    creditScore: number;
+  }> {
+    const user = await this.userRepository.findById(id);
+    if (!user) {
+      throw new NotFoundException(`User with ID ${id} not found`);
+    }
+
+    const repaymentPeriod =
+      await this.creditScoreService.calculateRepaymentPeriodByCreditScore(
+        user.id,
+      );
+
+    return {
+      repaymentPeriod,
+      creditScore: user.creditScore,
     };
   }
 

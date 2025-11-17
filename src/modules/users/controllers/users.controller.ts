@@ -327,6 +327,58 @@ export class UsersController {
     return this.usersService.getEligibleLoanAmount(id);
   }
 
+  @Get(':id/calculated-interest-rate')
+  @Permissions('users', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @ApiOperation({
+    summary: 'Get calculated interest rate for user based on credit score and interest rate tiers',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Calculated interest rate',
+    schema: {
+      type: 'object',
+      properties: {
+        interestRate: { type: 'number' },
+        creditScore: { type: 'number' },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  getCalculatedInterestRate(@Param('id') id: string) {
+    return this.usersService.getCalculatedInterestRate(id);
+  }
+
+  @Get(':id/calculated-repayment-period')
+  @Permissions('users', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @ApiOperation({
+    summary: 'Get calculated repayment period for user based on credit score and repayment period options',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Calculated repayment period',
+    schema: {
+      type: 'object',
+      properties: {
+        repaymentPeriod: { type: 'number' },
+        creditScore: { type: 'number' },
+      },
+    },
+  })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  @ApiResponse({
+    status: 403,
+    description: 'Forbidden - Insufficient permissions',
+  })
+  getCalculatedRepaymentPeriod(@Param('id') id: string) {
+    return this.usersService.getCalculatedRepaymentPeriod(id);
+  }
+
   @Get(':id/credit-score/history')
   @Permissions('users', 'read')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
