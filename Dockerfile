@@ -77,6 +77,9 @@ COPY tsconfig.json ./
 # Copy ormconfig.ts needed for TypeORM migrations
 COPY --from=builder /app/ormconfig.ts ./
 
+# Copy production seed script
+COPY --from=builder /app/prod-seed.sh ./prod-seed.sh
+RUN chmod +x ./prod-seed.sh
 
 # Create logs directory
 RUN mkdir -p logs
