@@ -4,12 +4,11 @@ import dataSource from '../data-source'
 
 export async function runCreditScoreConfigSeed(dataSourceToUse: DataSource): Promise<void> {
   const repo = dataSourceToUse.getRepository(SystemConfig)
-  const exists = await repo.findOne({ where: { category: 'credit_score', key: 'repayment_scoring' } })
-  if (exists) {
-    console.log('  ⏭️  Config already exists: credit_score.repayment_scoring')
-    return
-  }
-  const value = {
+
+  let createdCount = 0
+  let skippedCount = 0
+
+  const repaymentScoringValue = {
     basePoints: 50,
     amountMultipliers: [
       { minAmount: 0, maxAmount: 1000, multiplier: 0.5 },
@@ -28,10 +27,49 @@ export async function runCreditScoreConfigSeed(dataSourceToUse: DataSource): Pro
     enablePartialRepayments: true,
     minPointsForPartialRepayment: 5,
   }
-  console.log('  Creating config: credit_score.repayment_scoring')
-  const config = repo.create({ category: 'credit_score', key: 'repayment_scoring', value, description: 'Multiplier-based repayment scoring' })
-  await repo.save(config)
-  console.log('  ✅ Created config: credit_score.repayment_scoring - Multiplier-based repayment scoring')
+
+  const configsToSeed = [
+    {
+      category: 'credit_score',
+      key: 'repayment_scoring',
+      value: repaymentScoringValue,
+      description: 'Multiplier-based repayment scoring',
+    },
+    {
+      category: 'credit_score',
+      key: 'first_timer_default_score',
+      value: 100,
+      description: 'Default credit score for first-time users',
+    },
+    {
+      category: 'credit_score',
+      key: 'max_score',
+      value: 1000,
+      description: 'Maximum allowed credit score for all users',
+    },
+  ]
+
+  for (const cfg of configsToSeed) {
+    const existing = await repo.findOne({ where: { category: cfg.category, key: cfg.key } })
+    if (existing) {
+      console.log(`  ⏭️  Config already exists: ${cfg.category}.${cfg.key}`)
+      skippedCount++
+      continue
+    }
+    console.log(`  Creating config: ${cfg.category}.${cfg.key}`)
+    const config = repo.create({
+      category: cfg.category,
+      key: cfg.key,
+      value: cfg.value,
+      description: cfg.description,
+      updatedBy: null,
+    })
+    await repo.save(config)
+    console.log(`  ✅ Created config: ${cfg.category}.${cfg.key} - ${cfg.description}`)
+    createdCount++
+  }
+
+  console.log(`✅ Completed seeding Credit Score Configs: ${createdCount} created, ${skippedCount} skipped`)
 }
 
 async function runSeed(): Promise<void> {

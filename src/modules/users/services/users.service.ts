@@ -83,6 +83,32 @@ export class UsersService {
       creditScore = 0;
     }
 
+    // Clamp to maximum allowed credit score from system config
+    try {
+      const maxScore = await this.systemConfigService.getValue<number>(
+        'credit_score',
+        'max_score',
+        1000,
+      );
+      if (creditScore > maxScore) {
+        this.logger.debug(
+          { creditScore, maxScore },
+          'Clamping initial credit score to max_score',
+        );
+        creditScore = maxScore;
+      }
+    } catch (error) {
+      this.logger.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Error getting max_score, using default clamp 1000',
+      );
+      if (creditScore > 1000) {
+        creditScore = 1000;
+      }
+    }
+
     // Calculate credit limit from thresholds based on credit score
     let creditLimit = 0;
     try {

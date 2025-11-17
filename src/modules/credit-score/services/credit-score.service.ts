@@ -202,7 +202,36 @@ export class CreditScoreService {
     }
 
     const previousScore = user.creditScore;
-    const newScore = previousScore + points;
+    let newScore = previousScore + points;
+
+    // Clamp to maximum allowed credit score from system config
+    try {
+      const maxScore = await this.systemConfigService.getValue<number>(
+        'credit_score',
+        'max_score',
+        1000,
+      );
+      if (newScore > maxScore) {
+        this.logger.debug(
+          { previousScore, attemptedScore: newScore, maxScore },
+          'Clamping credit score to max_score after awarding points',
+        );
+        newScore = maxScore;
+      }
+    } catch (error) {
+      this.logger.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          previousScore,
+          attemptedScore: newScore,
+        },
+        'Error getting max_score, using default clamp 1000',
+      );
+      if (newScore > 1000) {
+        newScore = 1000;
+      }
+    }
+
     user.creditScore = newScore;
 
     // If autoLimitEnabled is true, update credit limit to match eligible loan amount
