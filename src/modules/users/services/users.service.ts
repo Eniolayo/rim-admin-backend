@@ -443,10 +443,22 @@ export class UsersService {
       throw new NotFoundException(`User with ID ${id} not found`);
     }
 
-    // If enabling auto-limit, calculate based on credit score
+    // If enabling auto-limit, calculate based on credit score using the same logic as eligible loan amount
     if (autoLimitEnabled === true) {
-      user.creditLimit = this.calculateCreditLimitByScore(user.creditScore);
+      const calculatedLimit = await this.calculateCreditLimitByScore(
+        user.id,
+        user.creditScore,
+      );
+      user.creditLimit = calculatedLimit;
       user.autoLimitEnabled = true;
+      this.logger.log(
+        {
+          userId: user.id,
+          creditScore: user.creditScore,
+          calculatedCreditLimit: calculatedLimit,
+        },
+        'Auto-calculated credit limit based on credit score',
+      );
     } else if (autoLimitEnabled === false) {
       // If disabling auto-limit, use the provided credit limit
       user.creditLimit = creditLimit;
@@ -638,12 +650,9 @@ export class UsersService {
   }
 
   private mapToResponse(user: User): UserResponseDto {
-    // Calculate credit limit based on autoLimitEnabled
-    let effectiveCreditLimit = Number(user.creditLimit);
-
-    if (user.autoLimitEnabled) {
-      effectiveCreditLimit = this.calculateCreditLimitByScore(user.creditScore);
-    }
+    // Return the stored credit limit
+    // If autoLimitEnabled is true, the credit limit should already be synced in the database
+    const effectiveCreditLimit = Number(user.creditLimit);
 
     return {
       id: user.id,
@@ -662,17 +671,16 @@ export class UsersService {
     };
   }
 
-  private calculateCreditLimitByScore(creditScore: number): number {
-    if (creditScore < 200) {
-      return 500;
-    } else if (creditScore >= 200 && creditScore < 500) {
-      return 1000;
-    } else if (creditScore >= 500 && creditScore < 1000) {
-      return 2000;
-    } else {
-      // creditScore >= 1000
-      return 3000;
-    }
+  /**
+   * Calculate credit limit based on credit score using the same logic as eligible loan amount
+   * This ensures credit limit and eligible loan amount are always in sync
+   */
+  private async calculateCreditLimitByScore(
+    userId: string,
+    creditScore: number,
+  ): Promise<number> {
+    // Use the same calculation as eligible loan amount to ensure consistency
+    return this.creditScoreService.calculateEligibleLoanAmount(userId);
   }
 
   async getEligibleLoanAmount(id: string): Promise<{

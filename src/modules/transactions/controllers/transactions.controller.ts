@@ -1,9 +1,10 @@
-import { Controller, Get, Param, Query, Post, Body, Res, UseGuards } from '@nestjs/common'
+import { Controller, Get, Param, Query, Post, Body, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiExtraModels, getSchemaPath } from '@nestjs/swagger'
 import { TransactionsService } from '../services/transactions.service'
 import { TransactionResponseDto, TransactionStatsDto } from '../dto/transaction-response.dto'
 import { TransactionQueryDto } from '../dto/transaction-query.dto'
 import { CreateReconciliationDto } from '../dto/reconcile.dto'
+import { CreateRepaymentDto } from '../dto/create-repayment.dto'
 import { PaginatedResponseDto } from '../../users/dto/paginated-response.dto'
 import type { Response } from 'express'
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
@@ -94,5 +95,34 @@ export class TransactionsController {
   @ApiResponse({ status: 200, type: TransactionResponseDto })
   reconcile(@Body() body: CreateReconciliationDto, @CurrentUser() admin: AdminUser): Promise<TransactionResponseDto> {
     return this.service.reconcile(body, admin.id) as any
+  }
+
+  @Post('repayment')
+  @HttpCode(HttpStatus.CREATED)
+  @Permissions('transactions', 'write')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @ApiOperation({
+    summary: 'Create a repayment transaction (Demo endpoint)',
+    description:
+      'Creates a repayment transaction and automatically reconciles it as completed. This triggers credit score updates. Useful for demos to simulate loan repayments.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Repayment transaction created and reconciled successfully',
+    type: TransactionResponseDto,
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'User or loan not found',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid request data',
+  })
+  async createRepayment(
+    @Body() body: CreateRepaymentDto,
+    @CurrentUser() admin: AdminUser,
+  ): Promise<TransactionResponseDto> {
+    return this.service.createRepayment(body, admin.id)
   }
 }

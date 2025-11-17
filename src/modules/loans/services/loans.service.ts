@@ -27,6 +27,12 @@ import { User } from '../../../entities/user.entity';
 import { LoansCacheService } from './loans-cache.service';
 import { CreditScoreService } from '../../credit-score/services/credit-score.service';
 import { SystemConfigService } from '../../system-config/services/system-config.service';
+import { UsersCacheService } from '../../users/services/users-cache.service';
+import {
+  Transaction,
+  TransactionType,
+  TransactionStatus,
+} from '../../../entities/transaction.entity';
 
 @Injectable()
 export class LoansService {
@@ -37,9 +43,12 @@ export class LoansService {
     private readonly repository: Repository<Loan>,
     @InjectRepository(User)
     private readonly userEntityRepository: Repository<User>,
+    @InjectRepository(Transaction)
+    private readonly transactionRepository: Repository<Transaction>,
     private readonly cacheService: LoansCacheService,
     private readonly creditScoreService: CreditScoreService,
     private readonly systemConfigService: SystemConfigService,
+    private readonly usersCacheService: UsersCacheService,
     private readonly logger: Logger,
   ) {}
 
@@ -98,6 +107,37 @@ export class LoansService {
       if (loanAmount > userCreditLimit) {
         throw new BadRequestException(
           `Loan amount exceeds user's credit limit. Maximum allowed: ${userCreditLimit}, Requested: ${loanAmount}`,
+        );
+      }
+
+      // Calculate total outstanding amount from active loans (disbursed, repaying, or defaulted)
+      // These are loans that have been disbursed and are still outstanding
+      const activeLoanStatuses = [
+        LoanStatus.DISBURSED,
+        LoanStatus.REPAYING,
+        LoanStatus.DEFAULTED,
+      ];
+      const activeLoans = await this.repository
+        .createQueryBuilder('loan')
+        .where('loan.userId = :userId', { userId: user.id })
+        .andWhere('loan.status IN (:...statuses)', {
+          statuses: activeLoanStatuses,
+        })
+        .getMany();
+
+      const totalOutstanding = activeLoans.reduce(
+        (sum, loan) => sum + Number(loan.outstandingAmount),
+        0,
+      );
+
+      // Check if new loan would exceed credit limit
+      const totalAfterNewLoan = totalOutstanding + loanAmount;
+      if (totalAfterNewLoan > userCreditLimit) {
+        const availableCredit = Math.max(0, userCreditLimit - totalOutstanding);
+        throw new BadRequestException(
+          `Cannot create loan. User has already borrowed ${totalOutstanding} and has a credit limit of ${userCreditLimit}. ` +
+            `Requested loan amount ${loanAmount} would exceed the limit. ` +
+            `Available credit: ${availableCredit}. User must repay existing loans before borrowing more.`,
         );
       }
 
@@ -199,19 +239,63 @@ export class LoansService {
 
       const savedLoan = await this.loanRepository.save(loan);
 
-      // Update user's total loans count using update to avoid relationship sync
-      const userLoans = await this.loanRepository.findByUserId(user.id);
-      await this.userRepository.update(user.id, {
-        totalLoans: userLoans.length,
+      // Update user's total loans count - count directly from database
+      const loanCount = await this.repository
+        .createQueryBuilder('loan')
+        .where('loan.userId = :userId', { userId: user.id })
+        .getCount();
+
+      // Use save() instead of update() to ensure the change is persisted
+      // Reload user first to get the latest entity state
+      const userToUpdate = await this.userEntityRepository.findOne({
+        where: { id: user.id },
       });
 
-      this.logger.log({ loanId: savedLoan.loanId }, 'Loan created');
+      if (!userToUpdate) {
+        this.logger.error(
+          { userId: user.id, loanId: savedLoan.loanId },
+          'User not found when trying to update totalLoans',
+        );
+      } else {
+        userToUpdate.totalLoans = loanCount;
+        await this.userEntityRepository.save(userToUpdate);
+      }
 
-      // Invalidate cache - list and stats changed
+      // Verify the update worked by reloading the user
+      const updatedUser = await this.userEntityRepository.findOne({
+        where: { id: user.id },
+      });
+
+      this.logger.log(
+        {
+          loanId: savedLoan.loanId,
+          userId: user.id,
+          totalLoans: loanCount,
+          verifiedTotalLoans: updatedUser?.totalLoans,
+        },
+        'Loan created and user totalLoans updated',
+      );
+
+      if (updatedUser?.totalLoans !== loanCount) {
+        this.logger.error(
+          {
+            loanId: savedLoan.loanId,
+            userId: user.id,
+            expectedTotalLoans: loanCount,
+            actualTotalLoans: updatedUser?.totalLoans,
+          },
+          'WARNING: totalLoans update may have failed',
+        );
+      }
+
+      // Invalidate cache - loan list/stats AND user cache (since totalLoans changed)
       try {
         await Promise.all([
           this.cacheService.invalidateLoanList(),
           this.cacheService.invalidateLoanStats(),
+          this.usersCacheService.invalidateUser(user.id),
+          this.usersCacheService.invalidateUserList(),
+          this.usersCacheService.invalidateUserStats(),
         ]);
       } catch (error) {
         // Cache invalidation error - log but don't fail
@@ -219,6 +303,7 @@ export class LoansService {
           {
             error: error instanceof Error ? error.message : String(error),
             loanId: savedLoan.loanId,
+            userId: user.id,
           },
           'Error invalidating cache after loan creation',
         );
@@ -572,6 +657,11 @@ export class LoansService {
       await this.validateRepaymentPeriod(updateLoanDto.repaymentPeriod);
     }
 
+    // Store original values before update
+    const originalAmountPaid = Number(loan.amountPaid);
+    const originalStatus = loan.status;
+    const originalOutstandingAmount = Number(loan.outstandingAmount);
+
     // Recalculate amounts if amount or interest rate changed
     if (updateLoanDto.amount || updateLoanDto.interestRate) {
       const amount = updateLoanDto.amount ?? Number(loan.amount);
@@ -591,7 +681,197 @@ export class LoansService {
       loan.dueDate = newDueDate;
     }
 
-    Object.assign(loan, updateLoanDto);
+    // Handle credit score update BEFORE updating loan if amountPaid increased
+    // The credit score service will update the loan's amountPaid, so we need to call it first
+    if (updateLoanDto.amountPaid !== undefined) {
+      const newAmountPaid = Number(updateLoanDto.amountPaid);
+      const repaymentAmount = newAmountPaid - originalAmountPaid;
+
+      if (repaymentAmount > 0) {
+        // Create a transaction record for this repayment
+        try {
+          const year = new Date().getFullYear();
+          const transactionCount = await this.transactionRepository
+            .createQueryBuilder('transaction')
+            .where('transaction.transactionId LIKE :pattern', {
+              pattern: `TXN-${year}-%`,
+            })
+            .getCount();
+          const sequence = String(transactionCount + 1).padStart(4, '0');
+          const transactionId = `TXN-${year}-${sequence}`;
+
+          const transaction = this.transactionRepository.create({
+            transactionId,
+            userId: loan.userId,
+            userPhone: loan.userPhone,
+            userEmail: loan.userEmail,
+            type: TransactionType.REPAYMENT,
+            amount: repaymentAmount,
+            status: TransactionStatus.COMPLETED,
+            paymentMethod: null,
+            description: `Manual repayment update for loan ${loan.loanId}`,
+            reference: `MANUAL-${Date.now()}`,
+            provider: loan.network,
+            network: loan.network,
+            loanId: loan.id,
+            reconciledAt: new Date(),
+            reconciledBy: null,
+            notes: 'Created automatically when loan amountPaid was updated',
+            metadata: {
+              createdVia: 'loan_update_endpoint',
+              originalAmountPaid,
+              newAmountPaid,
+              repaymentAmount,
+            },
+          });
+
+          const savedTransaction =
+            await this.transactionRepository.save(transaction);
+
+          // Award credit score points for this repayment
+          // This will update the loan's amountPaid, outstandingAmount, and user's totalRepaid
+          let creditScoreUpdated = false;
+          try {
+            await this.creditScoreService.awardPointsForRepayment(
+              savedTransaction.id,
+              loan.id,
+              loan.userPhone,
+            );
+            creditScoreUpdated = true;
+            this.logger.log(
+              {
+                loanId: loan.loanId,
+                transactionId: savedTransaction.transactionId,
+                repaymentAmount,
+                previousAmountPaid: originalAmountPaid,
+                newAmountPaid,
+              },
+              'Credit score updated for loan repayment',
+            );
+
+            // Reload loan after credit score service updates it
+            const updatedLoanAfterCreditScore =
+              await this.loanRepository.findById(id);
+            if (updatedLoanAfterCreditScore) {
+              loan.amountPaid = updatedLoanAfterCreditScore.amountPaid;
+              loan.outstandingAmount =
+                updatedLoanAfterCreditScore.outstandingAmount;
+              loan.status = updatedLoanAfterCreditScore.status;
+              loan.completedAt = updatedLoanAfterCreditScore.completedAt;
+            }
+          } catch (creditScoreError) {
+            // Log error but don't fail the loan update
+            this.logger.warn(
+              {
+                error:
+                  creditScoreError instanceof Error
+                    ? creditScoreError.message
+                    : String(creditScoreError),
+                loanId: loan.loanId,
+                transactionId: savedTransaction.transactionId,
+              },
+              'Failed to update credit score for loan repayment',
+            );
+          }
+
+          // If credit score service failed, still update user's totalRepaid
+          if (!creditScoreUpdated) {
+            try {
+              const user = await this.userEntityRepository.findOne({
+                where: { id: loan.userId },
+              });
+              if (user) {
+                const currentTotalRepaid = Number(user.totalRepaid);
+                user.totalRepaid = currentTotalRepaid + repaymentAmount;
+                await this.userEntityRepository.save(user);
+
+                // Invalidate user cache since totalRepaid was updated
+                try {
+                  await Promise.all([
+                    this.usersCacheService.invalidateUser(user.id),
+                    this.usersCacheService.invalidateUserList(),
+                    this.usersCacheService.invalidateUserStats(),
+                  ]);
+                } catch (cacheError) {
+                  this.logger.warn(
+                    {
+                      error:
+                        cacheError instanceof Error
+                          ? cacheError.message
+                          : String(cacheError),
+                      userId: user.id,
+                    },
+                    'Error invalidating user cache after totalRepaid update',
+                  );
+                }
+
+                this.logger.log(
+                  {
+                    loanId: loan.loanId,
+                    userId: loan.userId,
+                    repaymentAmount,
+                    previousTotalRepaid: currentTotalRepaid,
+                    newTotalRepaid: user.totalRepaid,
+                  },
+                  'Updated user totalRepaid after credit score service failed',
+                );
+              }
+            } catch (userUpdateError) {
+              this.logger.warn(
+                {
+                  error:
+                    userUpdateError instanceof Error
+                      ? userUpdateError.message
+                      : String(userUpdateError),
+                  loanId: loan.loanId,
+                  userId: loan.userId,
+                },
+                'Failed to update user totalRepaid after credit score service failure',
+              );
+            }
+          }
+        } catch (transactionError) {
+          // Log error but don't fail the loan update
+          this.logger.warn(
+            {
+              error:
+                transactionError instanceof Error
+                  ? transactionError.message
+                  : String(transactionError),
+              loanId: loan.loanId,
+              repaymentAmount,
+            },
+            'Failed to create transaction for loan repayment credit score update',
+          );
+        }
+      }
+    }
+
+    // Apply other updates (but skip amountPaid if it was already handled by credit score service)
+    const updateData = { ...updateLoanDto };
+    if (
+      updateLoanDto.amountPaid !== undefined &&
+      updateLoanDto.amountPaid === Number(loan.amountPaid)
+    ) {
+      // Credit score service already updated amountPaid, so don't override it
+      delete updateData.amountPaid;
+    }
+
+    Object.assign(loan, updateData);
+
+    // Update outstanding amount if amountPaid changed (or if it wasn't handled by credit score service)
+    if (updateLoanDto.amountPaid !== undefined) {
+      loan.outstandingAmount = Number(loan.amountDue) - Number(loan.amountPaid);
+
+      // Update loan status based on outstanding amount
+      if (loan.outstandingAmount <= 0 && loan.status !== LoanStatus.COMPLETED) {
+        loan.status = LoanStatus.COMPLETED;
+        loan.completedAt = loan.completedAt || new Date();
+      } else if (loan.status === LoanStatus.DISBURSED && loan.amountPaid > 0) {
+        loan.status = LoanStatus.REPAYING;
+      }
+    }
+
     const updatedLoan = await this.loanRepository.save(loan);
 
     this.logger.log({ loanId: updatedLoan.loanId }, 'Loan updated');
@@ -894,14 +1174,69 @@ export class LoansService {
       throw new NotFoundException(`Loan with ID ${id} not found`);
     }
 
+    // Store userId before deletion
+    const userId = loan.userId;
+
     await this.loanRepository.delete(id);
 
-    // Invalidate cache - user, list, and stats changed
+    // Update user's total loans count - count directly from database
+    const loanCount = await this.repository
+      .createQueryBuilder('loan')
+      .where('loan.userId = :userId', { userId })
+      .getCount();
+
+    // Use save() instead of update() to ensure the change is persisted
+    // Reload user first to get the latest entity state
+    const userToUpdate = await this.userEntityRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!userToUpdate) {
+      this.logger.error(
+        { userId, loanId: id },
+        'User not found when trying to update totalLoans after loan deletion',
+      );
+    } else {
+      userToUpdate.totalLoans = loanCount;
+      await this.userEntityRepository.save(userToUpdate);
+    }
+
+    // Verify the update worked by reloading the user
+    const updatedUser = await this.userEntityRepository.findOne({
+      where: { id: userId },
+    });
+
+    this.logger.log(
+      {
+        loanId: id,
+        userId,
+        totalLoans: loanCount,
+        verifiedTotalLoans: updatedUser?.totalLoans,
+      },
+      'Loan deleted and user totalLoans updated',
+    );
+
+    if (updatedUser?.totalLoans !== loanCount) {
+      this.logger.error(
+        {
+          loanId: id,
+          userId,
+          expectedTotalLoans: loanCount,
+          actualTotalLoans: updatedUser?.totalLoans,
+        },
+        'WARNING: totalLoans update may have failed',
+      );
+    }
+
+    // Invalidate cache - loan list/stats AND user cache (since totalLoans changed)
     try {
       await Promise.all([
         this.cacheService.invalidateLoan(id),
         this.cacheService.invalidateLoanList(),
         this.cacheService.invalidateLoanStats(),
+        this.usersCacheService.invalidateUser(userId),
+        this.usersCacheService.invalidateUserList(),
+        this.usersCacheService.invalidateUserStats(),
       ]);
     } catch (error) {
       // Cache invalidation error - log but don't fail
@@ -909,6 +1244,7 @@ export class LoansService {
         {
           error: error instanceof Error ? error.message : String(error),
           loanId: id,
+          userId,
         },
         'Error invalidating cache after loan deletion',
       );

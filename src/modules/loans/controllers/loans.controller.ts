@@ -61,7 +61,7 @@ export class LoansController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad request - Loan amount exceeds user credit limit, invalid data, or database constraint violation',
+    description: 'Bad request - Loan amount exceeds user credit limit, user has outstanding loans that would exceed credit limit, invalid data, or database constraint violation',
   })
   @ApiResponse({ status: 404, description: 'User not found' })
   @ApiResponse({

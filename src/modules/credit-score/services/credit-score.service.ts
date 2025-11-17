@@ -2,6 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import { Logger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -16,6 +18,7 @@ import {
 import { CreditScoreHistory } from '../../../entities/credit-score-history.entity';
 import { CreditScoreHistoryRepository } from '../repositories/credit-score-history.repository';
 import { SystemConfigService } from '../../system-config/services/system-config.service';
+import { UsersCacheService } from '../../users/services/users-cache.service';
 
 interface CreditScoreThreshold {
   score: number;
@@ -56,6 +59,8 @@ export class CreditScoreService {
     private readonly transactionRepository: Repository<Transaction>,
     private readonly creditScoreHistoryRepository: CreditScoreHistoryRepository,
     private readonly systemConfigService: SystemConfigService,
+    @Inject(forwardRef(() => UsersCacheService))
+    private readonly usersCacheService: UsersCacheService,
     private readonly logger: Logger,
   ) {}
 
@@ -70,7 +75,7 @@ export class CreditScoreService {
   ): Promise<{ pointsAwarded: number; newScore: number }> {
     this.logger.log(
       { transactionId, loanId, phoneNumber },
-      'Processing repayment for credit score',
+      'Processing repayment for credit score - EXECUTING IMMEDIATELY (not queued)',
     );
 
     // Get transaction
@@ -110,7 +115,7 @@ export class CreditScoreService {
         where: { phone: phoneNumber },
       });
     }
-    
+
     if (!user && transaction.userId) {
       user = await this.userRepository.findOne({
         where: { id: transaction.userId },
@@ -124,6 +129,21 @@ export class CreditScoreService {
     }
 
     // TypeScript now knows user is User (not null) after the check above
+
+    // Check if this transaction has already been processed to avoid double-counting
+    const existingByTransaction =
+      await this.creditScoreHistoryRepository.findByTransactionId(
+        transactionId,
+      );
+    if (existingByTransaction.length > 0) {
+      const last = existingByTransaction[0];
+      this.logger.warn(
+        { transactionId },
+        'Credit score already awarded for this transaction - skipping to avoid double-counting',
+      );
+      // Don't update totalRepaid or loan amounts if already processed
+      return { pointsAwarded: last.pointsAwarded, newScore: last.newScore };
+    }
 
     // Update loan amountPaid and outstandingAmount
     const repaymentAmount = Number(transaction.amount);
@@ -143,18 +163,11 @@ export class CreditScoreService {
 
     await this.loanRepository.save(loan);
 
-    const isFullRepayment = loan.outstandingAmount <= 0;
+    // Update user's totalRepaid field (only if transaction hasn't been processed before)
+    const currentTotalRepaid = Number(user.totalRepaid);
+    user.totalRepaid = currentTotalRepaid + repaymentAmount;
 
-    const existingByTransaction = await this.creditScoreHistoryRepository
-      .findByTransactionId(transactionId);
-    if (existingByTransaction.length > 0) {
-      const last = existingByTransaction[0];
-      this.logger.warn(
-        { transactionId },
-        'Credit score already awarded for this transaction',
-      );
-      return { pointsAwarded: last.pointsAwarded, newScore: last.newScore };
-    }
+    const isFullRepayment = loan.outstandingAmount <= 0;
 
     const calculationResult = await this.calculatePointsForRepayment(
       repaymentAmount,
@@ -167,15 +180,73 @@ export class CreditScoreService {
     const points = calculationResult.points;
 
     if (points <= 0) {
+      // Even if no points awarded, still save user to persist totalRepaid update
+      await this.userRepository.save(user);
+      // Invalidate user cache since totalRepaid was updated
+      try {
+        await Promise.all([
+          this.usersCacheService.invalidateUser(user.id),
+          this.usersCacheService.invalidateUserList(),
+          this.usersCacheService.invalidateUserStats(),
+        ]);
+      } catch (error) {
+        this.logger.warn(
+          {
+            error: error instanceof Error ? error.message : String(error),
+            userId: user.id,
+          },
+          'Error invalidating user cache after totalRepaid update',
+        );
+      }
       return { pointsAwarded: 0, newScore: user.creditScore };
     }
 
     const previousScore = user.creditScore;
     const newScore = previousScore + points;
     user.creditScore = newScore;
+
+    // If autoLimitEnabled is true, update credit limit to match eligible loan amount
+    // Calculate based on credit score thresholds only (without credit limit cap)
+    if (user.autoLimitEnabled) {
+      const eligibleAmount = await this.calculateEligibleLoanAmountFromScore(
+        user.id,
+        newScore,
+      );
+      const previousCreditLimit = Number(user.creditLimit);
+      user.creditLimit = eligibleAmount;
+      this.logger.log(
+        {
+          userId: user.id,
+          previousScore,
+          newScore,
+          previousCreditLimit,
+          newCreditLimit: eligibleAmount,
+        },
+        'Auto-updated credit limit to match eligible loan amount after credit score change',
+      );
+    }
+
     await this.userRepository.save(user);
 
-    const reason = isFullRepayment && !wasCompleted ? 'loan_completed' : 'partial_repayment';
+    // Invalidate user cache since creditScore, totalRepaid, and possibly creditLimit were updated
+    try {
+      await Promise.all([
+        this.usersCacheService.invalidateUser(user.id),
+        this.usersCacheService.invalidateUserList(),
+        this.usersCacheService.invalidateUserStats(),
+      ]);
+    } catch (error) {
+      this.logger.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          userId: user.id,
+        },
+        'Error invalidating user cache after credit score and totalRepaid update',
+      );
+    }
+
+    const reason =
+      isFullRepayment && !wasCompleted ? 'loan_completed' : 'partial_repayment';
 
     await this.creditScoreHistoryRepository.create({
       userId: user.id,
@@ -207,9 +278,15 @@ export class CreditScoreService {
   /**
    * Calculate eligible loan amount based on user's credit score
    */
-  async calculateEligibleLoanAmount(userId: string): Promise<number> {
-    this.logger.debug({ userId }, 'Calculating eligible loan amount');
-
+  /**
+   * Calculate eligible loan amount based on credit score thresholds only
+   * (without considering credit limit cap)
+   * Used internally when syncing credit limit with credit score
+   */
+  private async calculateEligibleLoanAmountFromScore(
+    userId: string,
+    creditScore: number,
+  ): Promise<number> {
     const user = await this.userRepository.findOne({
       where: { id: userId },
     });
@@ -228,10 +305,6 @@ export class CreditScoreService {
         'first_time_user_amount',
         500, // Default 500 naira
       );
-      this.logger.debug(
-        { userId, amount: firstTimeAmount },
-        'First-time user, returning default amount',
-      );
       return firstTimeAmount;
     }
 
@@ -244,7 +317,6 @@ export class CreditScoreService {
     ]);
 
     // Find highest threshold user qualifies for
-    const userScore = user.creditScore;
     let eligibleAmount = 500; // Default minimum
 
     // Sort thresholds by score descending
@@ -253,20 +325,43 @@ export class CreditScoreService {
     );
 
     for (const threshold of sortedThresholds) {
-      if (userScore >= threshold.score) {
+      if (creditScore >= threshold.score) {
         eligibleAmount = threshold.amount;
         break;
       }
     }
 
-    // Ensure amount doesn't exceed user's credit limit
-    const creditLimit = Number(user.creditLimit);
-    if (creditLimit > 0 && eligibleAmount > creditLimit) {
-      eligibleAmount = creditLimit;
+    return eligibleAmount;
+  }
+
+  async calculateEligibleLoanAmount(userId: string): Promise<number> {
+    this.logger.debug({ userId }, 'Calculating eligible loan amount');
+
+    const user = await this.userRepository.findOne({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException(`User with ID ${userId} not found`);
+    }
+
+    // Calculate based on credit score thresholds
+    let eligibleAmount = await this.calculateEligibleLoanAmountFromScore(
+      userId,
+      user.creditScore,
+    );
+
+    // Ensure amount doesn't exceed user's credit limit (only if autoLimitEnabled is false)
+    // If autoLimitEnabled is true, credit limit should match eligible amount, so no cap needed
+    if (!user.autoLimitEnabled) {
+      const creditLimit = Number(user.creditLimit);
+      if (creditLimit > 0 && eligibleAmount > creditLimit) {
+        eligibleAmount = creditLimit;
+      }
     }
 
     this.logger.debug(
-      { userId, creditScore: userScore, eligibleAmount },
+      { userId, creditScore: user.creditScore, eligibleAmount },
       'Calculated eligible loan amount',
     );
 
@@ -463,11 +558,12 @@ export class CreditScoreService {
     };
 
     try {
-      const config = await this.systemConfigService.getValue<RepaymentScoringConfig>(
-        'credit_score',
-        'repayment_scoring',
-        defaultConfig,
-      );
+      const config =
+        await this.systemConfigService.getValue<RepaymentScoringConfig>(
+          'credit_score',
+          'repayment_scoring',
+          defaultConfig,
+        );
       return config || defaultConfig;
     } catch {
       this.logger.warn({}, 'Using default repayment scoring config');
@@ -475,16 +571,23 @@ export class CreditScoreService {
     }
   }
 
-  private getAmountMultiplier(amount: number, tiers: RepaymentAmountTier[]): number {
+  private getAmountMultiplier(
+    amount: number,
+    tiers: RepaymentAmountTier[],
+  ): number {
     const sorted = [...tiers].sort((a, b) => a.minAmount - b.minAmount);
     for (const tier of sorted) {
-      if (amount >= tier.minAmount && amount <= tier.maxAmount) return tier.multiplier;
+      if (amount >= tier.minAmount && amount <= tier.maxAmount)
+        return tier.multiplier;
     }
     if (sorted.length > 0) return sorted[sorted.length - 1].multiplier;
     return 1;
   }
 
-  private getDurationMultiplier(days: number, tiers: RepaymentDurationTier[]): number {
+  private getDurationMultiplier(
+    days: number,
+    tiers: RepaymentDurationTier[],
+  ): number {
     const sorted = [...tiers].sort((a, b) => a.minDays - b.minDays);
     for (const tier of sorted) {
       if (days >= tier.minDays && days <= tier.maxDays) return tier.multiplier;
@@ -501,22 +604,38 @@ export class CreditScoreService {
     isFullRepayment: boolean,
   ): Promise<{ points: number; metadata: Record<string, unknown> }> {
     if (!repaymentAmount || repaymentAmount <= 0) {
-      return { points: 0, metadata: { repaymentAmount, reason: 'invalid_amount' } };
+      return {
+        points: 0,
+        metadata: { repaymentAmount, reason: 'invalid_amount' },
+      };
     }
-    
+
     const config = await this.getRepaymentScoringConfig();
-    const amountMultiplier = this.getAmountMultiplier(repaymentAmount, config.amountMultipliers);
-    const durationMs = Math.abs(new Date(repaidAt).getTime() - new Date(disbursedAt).getTime());
+    const amountMultiplier = this.getAmountMultiplier(
+      repaymentAmount,
+      config.amountMultipliers,
+    );
+    const durationMs = Math.abs(
+      new Date(repaidAt).getTime() - new Date(disbursedAt).getTime(),
+    );
     const durationDays = Math.floor(durationMs / (1000 * 60 * 60 * 24));
-    const durationMultiplier = this.getDurationMultiplier(durationDays, config.durationMultipliers);
-    
-    let calculatedPoints = config.basePoints * amountMultiplier * durationMultiplier;
-    const repaymentPercentage = loanAmount > 0 ? repaymentAmount / loanAmount : 0;
+    const durationMultiplier = this.getDurationMultiplier(
+      durationDays,
+      config.durationMultipliers,
+    );
+
+    let calculatedPoints =
+      config.basePoints * amountMultiplier * durationMultiplier;
+    const repaymentPercentage =
+      loanAmount > 0 ? repaymentAmount / loanAmount : 0;
     let finalPoints = calculatedPoints;
-    
+
     if (config.enablePartialRepayments && !isFullRepayment) {
       finalPoints = calculatedPoints * repaymentPercentage;
-      if (config.minPointsForPartialRepayment && finalPoints < config.minPointsForPartialRepayment) {
+      if (
+        config.minPointsForPartialRepayment &&
+        finalPoints < config.minPointsForPartialRepayment
+      ) {
         return {
           points: 0,
           metadata: {
@@ -536,22 +655,28 @@ export class CreditScoreService {
         };
       }
     }
-    
+
     if (isFullRepayment) {
       if (config.fullRepaymentBonus && config.fullRepaymentBonus > 0) {
         finalPoints = finalPoints * config.fullRepaymentBonus;
       }
-      if (config.fullRepaymentFixedBonus && config.fullRepaymentFixedBonus > 0) {
+      if (
+        config.fullRepaymentFixedBonus &&
+        config.fullRepaymentFixedBonus > 0
+      ) {
         finalPoints = finalPoints + config.fullRepaymentFixedBonus;
       }
     }
-    
-    if (config.maxPointsPerTransaction && finalPoints > config.maxPointsPerTransaction) {
+
+    if (
+      config.maxPointsPerTransaction &&
+      finalPoints > config.maxPointsPerTransaction
+    ) {
       finalPoints = config.maxPointsPerTransaction;
     }
-    
+
     const roundedPoints = Math.round(finalPoints);
-    
+
     return {
       points: roundedPoints,
       metadata: {
@@ -565,9 +690,17 @@ export class CreditScoreService {
         finalPoints: roundedPoints,
         isPartialRepayment: !isFullRepayment,
         repaymentPercentage: !isFullRepayment ? repaymentPercentage : 1,
-        fullRepaymentBonus: isFullRepayment && config.fullRepaymentBonus ? config.fullRepaymentBonus : undefined,
-        fullRepaymentFixedBonus: isFullRepayment && config.fullRepaymentFixedBonus ? config.fullRepaymentFixedBonus : undefined,
-        capped: config.maxPointsPerTransaction && finalPoints >= config.maxPointsPerTransaction,
+        fullRepaymentBonus:
+          isFullRepayment && config.fullRepaymentBonus
+            ? config.fullRepaymentBonus
+            : undefined,
+        fullRepaymentFixedBonus:
+          isFullRepayment && config.fullRepaymentFixedBonus
+            ? config.fullRepaymentFixedBonus
+            : undefined,
+        capped:
+          config.maxPointsPerTransaction &&
+          finalPoints >= config.maxPointsPerTransaction,
       },
     };
   }

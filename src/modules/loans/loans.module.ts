@@ -10,10 +10,11 @@ import { User } from '../../entities/user.entity';
 import { UserRepository } from '../users/repositories/user.repository';
 import { CreditScoreModule } from '../credit-score/credit-score.module';
 import { SystemConfigModule } from '../system-config/system-config.module';
+import { Transaction } from '../../entities/transaction.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Loan, User]),
+    TypeOrmModule.forFeature([Loan, User, Transaction]),
     UsersModule,
     CreditScoreModule,
     SystemConfigModule,

@@ -16,6 +16,6 @@ import { SystemConfigModule } from '../system-config/system-config.module';
   ],
   controllers: [UsersController],
   providers: [UsersService, UserRepository, UsersCacheService],
-  exports: [UsersService, UserRepository],
+  exports: [UsersService, UserRepository, UsersCacheService],
 })
 export class UsersModule {}
