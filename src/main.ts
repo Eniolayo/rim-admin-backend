@@ -21,12 +21,43 @@ async function bootstrap(): Promise<void> {
   app.useLogger(logger);
 
   // Enable CORS
+  const allowedOrigins = [
+    // Localhost with any port
+    /^http:\/\/localhost:\d+$/,
+    // Render.com domain
+    'https://rim-admin-frontend.onrender.com',
+    // Additional origins from environment variable
+    ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
+      []),
+  ];
+
   app.enableCors({
-    origin:
-      nodeEnv === 'production'
-        ? process.env.CORS_ORIGIN?.split(',') || []
-        : true,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl requests)
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      // Check if origin matches any allowed origin
+      const isAllowed = allowedOrigins.some((allowedOrigin) => {
+        if (typeof allowedOrigin === 'string') {
+          return origin === allowedOrigin;
+        }
+        if (allowedOrigin instanceof RegExp) {
+          return allowedOrigin.test(origin);
+        }
+        return false;
+      });
+
+      if (isAllowed) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   });
 
   // Global prefix
