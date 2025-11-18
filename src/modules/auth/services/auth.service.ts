@@ -21,6 +21,7 @@ import {
   AdminUser,
   AdminUserStatus,
 } from '../../../entities/admin-user.entity';
+import { formatRoleName } from '../../../common/utils/role.utils';
 import { PendingLogin } from '../../../entities/pending-login.entity';
 import { BackupCode } from '../../../entities/backup-code.entity';
 
@@ -115,11 +116,12 @@ export class AuthService {
   }
 
   private mapToUserResponse(user: AdminUser): UserResponseDto {
+    const roleName = user.role || user.roleEntity?.name || '';
     return {
       id: user.id,
       email: user.email,
       name: user.username,
-      role: user.role || user.roleEntity?.name || '',
+      role: formatRoleName(roleName),
     };
   }
 

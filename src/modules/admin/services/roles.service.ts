@@ -7,6 +7,7 @@ import { AdminRole } from '../../../entities/admin-role.entity';
 import { AdminRoleRepository } from '../repositories/role.repository';
 import { AdminMgmtUserRepository } from '../repositories/user.repository';
 import { CreateRoleDto, RoleResponseDto, UpdateRoleDto } from '../dto/role.dto';
+import { formatRoleName } from '../../../common/utils/role.utils';
 
 @Injectable()
 export class RolesService {
@@ -18,7 +19,7 @@ export class RolesService {
   private toDto(role: AdminRole): RoleResponseDto {
     return {
       id: role.id,
-      name: role.name,
+      name: formatRoleName(role.name),
       description: role.description,
       permissions: role.permissions as any,
       userCount: role.userCount,

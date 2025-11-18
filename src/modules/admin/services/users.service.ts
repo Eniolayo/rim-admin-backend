@@ -9,6 +9,7 @@ import { AdminMgmtUserRepository } from '../repositories/user.repository';
 import { AdminRoleRepository } from '../repositories/role.repository';
 import { AdminUserResponseDto } from '../dto/admin-user.dto';
 import { AdminUser } from '../../../entities/admin-user.entity';
+import { formatRoleName } from '../../../common/utils/role.utils';
 
 @Injectable()
 export class UsersService {
@@ -20,11 +21,12 @@ export class UsersService {
   ) {}
 
   private toDto(user: AdminUser): AdminUserResponseDto {
+    const roleName = user.role || user.roleEntity?.name || '';
     return {
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role || user.roleEntity?.name || '',
+      role: formatRoleName(roleName),
       roleId: user.roleId,
       status: user.status,
       lastLogin: user.lastLogin ?? null,

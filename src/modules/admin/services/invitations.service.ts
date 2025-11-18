@@ -29,6 +29,10 @@ import {
 } from '../dto/invitation.dto';
 import { AdminUserResponseDto } from '../dto/admin-user.dto';
 import { InvitationsCacheService } from './invitations-cache.service';
+import {
+  formatRoleName,
+  formatRoleNameNullable,
+} from '../../../common/utils/role.utils';
 
 @Injectable()
 export class InvitationsService {
@@ -64,7 +68,7 @@ export class InvitationsService {
       email: invitation.email,
       role: invitation.role,
       roleId: invitation.roleId,
-      roleName: roleName ?? null,
+      roleName: formatRoleNameNullable(roleName),
       inviteToken: invitation.inviteToken,
       invitedBy: invitation.invitedBy,
       invitedByName: invitation.invitedByName,
@@ -76,11 +80,12 @@ export class InvitationsService {
   }
 
   private toAdminUserDto(user: AdminUser): AdminUserResponseDto {
+    const roleName = user.role || user.roleEntity?.name || '';
     return {
       id: user.id,
       username: user.username,
       email: user.email,
-      role: user.role || user.roleEntity?.name || '',
+      role: formatRoleName(roleName),
       roleId: user.roleId,
       status: user.status,
       lastLogin: user.lastLogin ?? null,
