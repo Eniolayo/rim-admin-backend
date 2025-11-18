@@ -18,155 +18,12 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(logger);
 
-  // CORS Configuration - MUST be before setGlobalPrefix and any guards
-  // Frontend uses withCredentials: true, so we MUST specify exact origins (cannot use '*')
-  // const allowedOrigins: string[] = [
-  //   'https://rim-admin-frontend.onrender.com',
-  //   'http://localhost:3000',
-  //   'http://localhost:5173',
-  //   'http://localhost:5174',
-  //   'http://localhost:8080',
-  //   ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
-  //     []),
-  // ];
-
-  // Function to check if origin is allowed
-  // const isOriginAllowed = (origin: string | undefined): boolean => {
-  //   if (!origin) {
-  //     return true; // Allow requests with no origin
-  //   }
-
-  //   // Check exact matches
-  //   if (allowedOrigins.includes(origin)) {
-  //     return true;
-  //   }
-
-  //   // Check localhost with any port
-  //   if (/^https?:\/\/localhost:\d+$/.test(origin)) {
-  //     return true;
-  //   }
-
-  //   return false;
-  // };
-
-  // Custom CORS middleware that runs BEFORE everything else
-  // This ensures OPTIONS requests are handled before guards can interfere
-  // app.use((req: any, res: any, next: any) => {
-  //   const origin = req.headers.origin;
-
-  //   // Handle preflight OPTIONS requests immediately
-  //   if (req.method === 'OPTIONS') {
-  //     if (isOriginAllowed(origin)) {
-  //       // When credentials: true, we MUST return the exact origin (not '*')
-  //       res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  //       res.setHeader(
-  //         'Access-Control-Allow-Methods',
-  //         'GET, POST, PUT, DELETE, PATCH, OPTIONS',
-  //       );
-  //       res.setHeader(
-  //         'Access-Control-Allow-Headers',
-  //         'Content-Type, Authorization, X-Requested-With, Accept, Origin',
-  //       );
-  //       res.setHeader('Access-Control-Allow-Credentials', 'true');
-  //       res.setHeader('Access-Control-Max-Age', '86400');
-  //       res.setHeader('Access-Control-Expose-Headers', 'Authorization');
-  //       logger.warn(`CORS: OPTIONS preflight allowed for origin: ${origin}`);
-  //       return res.status(204).end();
-  //     } else {
-  //       logger.warn(`CORS: OPTIONS request rejected for origin: ${origin}`);
-  //       return res.status(403).end();
-  //     }
-  //   }
-
-  //   // For non-OPTIONS requests, set CORS headers if origin is allowed
-  //   if (isOriginAllowed(origin)) {
-  //     // When credentials: true, we MUST return the exact origin (not '*')
-  //     res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  //     res.setHeader('Access-Control-Allow-Credentials', 'true');
-  //     res.setHeader('Access-Control-Expose-Headers', 'Authorization');
-  //   }
-
-  //   next();
-  // });
-
-  // CORS Configuration - Must specify exact origins when using credentials
-  const allowedOrigins: string[] = [
-    'https://rim-admin-frontend.onrender.com',
-    'http://localhost:3000',
-    'http://localhost:5173',
-    'http://localhost:5174',
-    'http://localhost:8080',
-    ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
-      []),
-  ];
-
-  // Function to check if origin is allowed
-  const isOriginAllowed = (origin: string | undefined): boolean => {
-    if (!origin) {
-      // Allow requests with no origin (e.g., Postman, curl)
-      return true;
-    }
-
-    // Check exact matches
-    if (allowedOrigins.includes(origin)) {
-      return true;
-    }
-
-    // Check localhost with any port for development
-    if (/^https?:\/\/localhost:\d+$/.test(origin)) {
-      return true;
-    }
-
-    return false;
-  };
-
-  app.enableCors({
-    origin: (origin: string | undefined) => {
-      if (isOriginAllowed(origin)) {
-        // Return the exact origin (not '*') when credentials are enabled
-        // NestJS will use this origin string in the Access-Control-Allow-Origin header
-        return origin || true;
-      } else {
-        logger.warn(`CORS: REJECTING origin: ${origin}`);
-        return false;
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Requested-With',
-      'Accept',
-      'Origin',
-      'x-skip-auth-redirect',
-      'x-skip-error-toast',
-    ],
-    exposedHeaders: ['Authorization'],
-    maxAge: 86400,
-    preflightContinue: false,
-    optionsSuccessStatus: 204,
-  });
+  app.enableCors();
 
   // Global prefix
   app.setGlobalPrefix(apiPrefix);
 
-  // Remove this duplicate ValidationPipe - it's already in app.module.ts
-  // app.useGlobalPipes(
-  //   new ValidationPipe({
-  //     whitelist: true,
-  //     forbidNonWhitelisted: true,
-  //     transform: true,
-  //     transformOptions: {
-  //       enableImplicitConversion: true,
-  //     },
-  //   }),
-  // );
-
-  // Get port from environment variable (Render provides PORT) or config
-  const port = process.env.PORT
-    ? parseInt(process.env.PORT, 10)
-    : configService.get<number>('app.port', 3000);
+  const port = configService.get<number>('app.port', 3000);
 
   // Swagger documentation
   const enableSwagger = configService.get<boolean>('app.enableSwagger', false);
@@ -220,39 +77,23 @@ async function bootstrap(): Promise<void> {
     // This allows the app to run without Redis if needed
   }
 
-  // Listen on 0.0.0.0 to accept connections from outside the container (required for Render)
-  await app.listen(port, '0.0.0.0');
+  await app.listen(port);
 
-  logger.log(`Application is running on: http://0.0.0.0:${port}/${apiPrefix}`);
+  logger.log(
+    `Application is running on: http://localhost:${port}/${apiPrefix}`,
+  );
 
   // Graceful shutdown
   process.on('SIGTERM', async () => {
     logger.log('SIGTERM received, shutting down gracefully...');
     try {
       const redisClient = app.get<Redis>(REDIS_CLIENT);
-      if (
-        redisClient &&
-        (redisClient.status === 'ready' || redisClient.status === 'connect')
-      ) {
-        try {
-          await redisClient.quit();
-          logger.log('Redis connection closed');
-        } catch (error) {
-          // If quit fails, try disconnect
-          try {
-            redisClient.disconnect();
-            logger.log('Redis connection disconnected');
-          } catch (disconnectError) {
-            logger.warn('Redis already closed or error during disconnect');
-          }
-        }
+      if (redisClient && redisClient.status === 'ready') {
+        await redisClient.quit();
+        logger.log('Redis connection closed');
       }
     } catch (error) {
-      // Redis might not be available, continue with shutdown
-      logger.warn(
-        'Error closing Redis connection (continuing shutdown):',
-        error,
-      );
+      logger.error('Error closing Redis connection:', error);
     }
     await app.close();
     process.exit(0);
@@ -262,29 +103,12 @@ async function bootstrap(): Promise<void> {
     logger.log('SIGINT received, shutting down gracefully...');
     try {
       const redisClient = app.get<Redis>(REDIS_CLIENT);
-      if (
-        redisClient &&
-        (redisClient.status === 'ready' || redisClient.status === 'connect')
-      ) {
-        try {
-          await redisClient.quit();
-          logger.log('Redis connection closed');
-        } catch (error) {
-          // If quit fails, try disconnect
-          try {
-            redisClient.disconnect();
-            logger.log('Redis connection disconnected');
-          } catch (disconnectError) {
-            logger.warn('Redis already closed or error during disconnect');
-          }
-        }
+      if (redisClient && redisClient.status === 'ready') {
+        await redisClient.quit();
+        logger.log('Redis connection closed');
       }
     } catch (error) {
-      // Redis might not be available, continue with shutdown
-      logger.warn(
-        'Error closing Redis connection (continuing shutdown):',
-        error,
-      );
+      logger.error('Error closing Redis connection:', error);
     }
     await app.close();
     process.exit(0);
