@@ -5,9 +5,23 @@ import { join } from 'path';
 config();
 
 // Determine file extension based on environment
-const isDevelopment = process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test'
-const entityExtension = isDevelopment ? '.ts' : '.js'
-const migrationExtension = isDevelopment ? '.ts' : '.js'
+// If running with ts-node (seeds/migrations), use .ts, otherwise use .js for compiled code
+// Check if we're running via ts-node by checking:
+// 1. If __filename ends with .ts (running as source)
+// 2. If process.argv[1] ends with .ts (main entry point is .ts)
+// 3. If require.extensions['.ts'] exists (ts-node is registered)
+const isRunningWithTsNode =
+  (typeof __filename !== 'undefined' && __filename.endsWith('.ts')) ||
+  (typeof process !== 'undefined' &&
+    process.argv[1] &&
+    process.argv[1].endsWith('.ts')) ||
+  (typeof require !== 'undefined' &&
+    require.extensions &&
+    require.extensions['.ts'] !== undefined);
+const isDevelopment =
+  process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'test';
+const entityExtension = isDevelopment || isRunningWithTsNode ? '.ts' : '.js';
+const migrationExtension = isDevelopment || isRunningWithTsNode ? '.ts' : '.js';
 
 // Custom logger that respects test environment
 class TestAwareLogger implements Logger {
@@ -49,7 +63,9 @@ export const dataSourceOptions: DataSourceOptions = {
   username: process.env.DB_USERNAME || 'postgres',
   password: process.env.DB_PASSWORD || 'postgres',
   database: process.env.DB_NAME || 'rim_db',
-  entities: [join(__dirname, '..', 'entities', '**', `*.entity${entityExtension}`)],
+  entities: [
+    join(__dirname, '..', 'entities', '**', `*.entity${entityExtension}`),
+  ],
   migrations: [join(__dirname, 'migrations', '**', `*${migrationExtension}`)],
   synchronize: false,
   logging: process.env.NODE_ENV === 'development',
@@ -59,4 +75,3 @@ export const dataSourceOptions: DataSourceOptions = {
 const dataSource = new DataSource(dataSourceOptions);
 
 export default dataSource;
-
