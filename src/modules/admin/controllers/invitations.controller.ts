@@ -29,7 +29,6 @@ import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { RequireSuperAdmin } from '../../auth/decorators/require-super-admin.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Public } from '../../auth/decorators/public.decorator';
-import { ActivityLogInterceptor } from '../interceptors/activity-log.interceptor';
 import { AdminUser } from '../../../entities/admin-user.entity';
 
 @ApiTags('admin-invitations')
@@ -42,7 +41,6 @@ export class InvitationsController {
   @Post('invite')
   @RequireSuperAdmin()
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Invite a new admin' })
   @ApiResponse({
@@ -149,7 +147,6 @@ export class InvitationsController {
   @Post(':id/resend')
   @RequireSuperAdmin()
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Resend an invitation' })
   @ApiParam({
@@ -190,7 +187,6 @@ export class InvitationsController {
   @Delete(':id')
   @RequireSuperAdmin()
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cancel an invitation' })
   @ApiParam({

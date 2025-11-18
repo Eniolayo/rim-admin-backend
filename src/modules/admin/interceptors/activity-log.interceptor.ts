@@ -182,7 +182,10 @@ export class ActivityLogInterceptor implements NestInterceptor {
           pathPattern: /\/admin\/invitations\/invite$/,
           action: 'create',
           extractResourceId: (_, __, ___) => null,
-          extractDetails: (body) => ({ email: body?.email, role: body?.role }),
+          extractDetails: (body) => ({
+            email: body?.email,
+            roleId: body?.roleId,
+          }),
         },
         {
           method: 'POST',
