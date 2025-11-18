@@ -20,83 +20,99 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(logger);
 
-  // Enable CORS
-  // Build list of allowed origins
-  // const allowedOriginStrings: string[] = [
-  //   'https://rim-admin-frontend.onrender.com',
-  //   ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
-  //     []),
-  // ];
+  // CORS Configuration - MUST be before setGlobalPrefix and any guards
+  // Frontend uses withCredentials: true, so we MUST specify exact origins (cannot use '*')
+  const allowedOrigins: string[] = [
+    'https://rim-admin-frontend.onrender.com',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:8080',
+    ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
+      []),
+  ];
 
-  // // Build list of allowed origin patterns (regex)
-  // const allowedOriginPatterns: RegExp[] = [
-  //   // Localhost with any port (http and https)
-  //   /^https?:\/\/localhost:\d+$/,
-  //   // Render.com domain (with or without trailing slash, with or without www)
-  //   /^https:\/\/(www\.)?rim-admin-frontend\.onrender\.com\/?$/,
-  // ];
+  // Function to check if origin is allowed
+  const isOriginAllowed = (origin: string | undefined): boolean => {
+    if (!origin) {
+      return true; // Allow requests with no origin
+    }
 
-  // // Function to check if origin is allowed
-  // const isOriginAllowed = (origin: string | undefined): string | boolean => {
-  //   // Allow requests with no origin (like mobile apps or curl requests)
-  //   if (!origin) {
-  //     return true;
-  //   }
+    // Check exact matches
+    if (allowedOrigins.includes(origin)) {
+      return true;
+    }
 
-  //   // Normalize origin for comparison (remove trailing slash and whitespace)
-  //   const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+    // Check localhost with any port
+    if (/^https?:\/\/localhost:\d+$/.test(origin)) {
+      return true;
+    }
 
-  //   // Check exact string matches first
-  //   const exactMatch = allowedOriginStrings.some((allowedOrigin) => {
-  //     const normalizedAllowed = allowedOrigin.trim().replace(/\/+$/, '');
-  //     return normalizedOrigin === normalizedAllowed;
-  //   });
+    return false;
+  };
 
-  //   if (exactMatch) {
-  //     logger.warn(`CORS: Origin ${origin} allowed (exact match)`);
-  //     // Return the original origin string, not normalized
-  //     return origin;
-  //   }
+  // Custom CORS middleware that runs BEFORE everything else
+  // This ensures OPTIONS requests are handled before guards can interfere
+  app.use((req: any, res: any, next: any) => {
+    const origin = req.headers.origin;
 
-  //   // Check pattern matches
-  //   const patternMatch = allowedOriginPatterns.some((pattern) => {
-  //     return pattern.test(normalizedOrigin);
-  //   });
+    // Handle preflight OPTIONS requests immediately
+    if (req.method === 'OPTIONS') {
+      if (isOriginAllowed(origin)) {
+        // When credentials: true, we MUST return the exact origin (not '*')
+        res.setHeader('Access-Control-Allow-Origin', origin || '*');
+        res.setHeader(
+          'Access-Control-Allow-Methods',
+          'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+        );
+        res.setHeader(
+          'Access-Control-Allow-Headers',
+          'Content-Type, Authorization, X-Requested-With, Accept, Origin',
+        );
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        res.setHeader('Access-Control-Max-Age', '86400');
+        res.setHeader('Access-Control-Expose-Headers', 'Authorization');
+        logger.warn(`CORS: OPTIONS preflight allowed for origin: ${origin}`);
+        return res.status(204).end();
+      } else {
+        logger.warn(`CORS: OPTIONS request rejected for origin: ${origin}`);
+        return res.status(403).end();
+      }
+    }
 
-  //   if (patternMatch) {
-  //     logger.warn(`CORS: Origin ${origin} allowed (pattern match)`);
-  //     // Return the original origin string, not normalized
-  //     return origin;
-  //   }
+    // For non-OPTIONS requests, set CORS headers if origin is allowed
+    if (isOriginAllowed(origin)) {
+      // When credentials: true, we MUST return the exact origin (not '*')
+      res.setHeader('Access-Control-Allow-Origin', origin || '*');
+      res.setHeader('Access-Control-Allow-Credentials', 'true');
+      res.setHeader('Access-Control-Expose-Headers', 'Authorization');
+    }
 
-  //   // Origin not allowed
-  //   logger.warn(`CORS: Origin ${origin} is NOT allowed`);
-  //   logger.warn(
-  //     `CORS: Allowed origins: ${JSON.stringify(allowedOriginStrings)}`,
-  //   );
-  //   return false;
-  // };
+    next();
+  });
 
-  // app.enableCors({
-  //   origin: isOriginAllowed,
-  //   credentials: true,
-  //   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  //   allowedHeaders: [
-  //     'Content-Type',
-  //     'Authorization',
-  //     'X-Requested-With',
-  //     'Accept',
-  //     'Origin',
-  //   ],
-  //   exposedHeaders: ['Authorization'],
-  //   maxAge: 86400, // 24 hours
-  //   preflightContinue: false,
-  //   optionsSuccessStatus: 204,
-  // });
+  // Also enable NestJS CORS as a fallback
   app.enableCors({
-    origin: '*',
-    methods: '*',
-    allowedHeaders: '*',
+    origin: (origin: string | undefined) => {
+      if (!origin) return true;
+      if (isOriginAllowed(origin)) {
+        logger.warn(`CORS: Allowing origin: ${origin}`);
+        return origin;
+      }
+      logger.warn(`CORS: REJECTING origin: ${origin}`);
+      return false;
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+    ],
+    exposedHeaders: ['Authorization'],
+    maxAge: 86400,
     preflightContinue: false,
     optionsSuccessStatus: 204,
   });
