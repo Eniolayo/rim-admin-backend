@@ -166,7 +166,8 @@ export class AuthService {
     code: string,
   ): Promise<{ token: string; refreshToken: string; expiresIn: string }> {
     // Check if session exists at all (even if used)
-    const anySession = await this.pendingLoginRepository.findByHash(temporaryHash);
+    const anySession =
+      await this.pendingLoginRepository.findByHash(temporaryHash);
 
     if (!anySession) {
       throw new BadRequestException('Session not found');
@@ -180,7 +181,8 @@ export class AuthService {
       throw new BadRequestException('Session expired');
     }
 
-    const session = await this.pendingLoginRepository.findActiveByHash(temporaryHash);
+    const session =
+      await this.pendingLoginRepository.findActiveByHash(temporaryHash);
     if (!session || session.type !== 'mfa') {
       throw new BadRequestException('Invalid session');
     }
@@ -235,7 +237,7 @@ export class AuthService {
   async verify2faSetup(
     sessionToken: string,
     code: string,
-  ): Promise<{ status: string; temporaryHash?: string; expiresAt?: Date }> {
+  ): Promise<{ token: string; refreshToken: string; expiresIn: string }> {
     const session =
       await this.pendingLoginRepository.findActiveByHash(sessionToken);
     if (!session || session.type !== 'setup' || !session.secret) {
@@ -260,12 +262,8 @@ export class AuthService {
     user.twoFactorEnabled = true;
     await this.adminUserRepository.save(user);
     await this.pendingLoginRepository.markUsed(session.id);
-    const mfa = await this.createPendingSession(user.id, 'mfa', null, null);
-    return {
-      status: 'MFA_ENABLED',
-      temporaryHash: mfa.hash,
-      expiresAt: mfa.expiresAt,
-    };
+    // User has already provided credentials and verified 2FA, so issue tokens directly
+    return this.generateTokens(user);
   }
 
   private async generateBackupCodes(adminUserId: string): Promise<string[]> {

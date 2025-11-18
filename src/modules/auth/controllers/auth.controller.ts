@@ -15,7 +15,18 @@ import {
   ApiBearerAuth,
 } from '@nestjs/swagger';
 import { AuthService } from '../services/auth.service';
-import { LoginDto, LoginResultDto, SetupRequestDto, SetupVerifyDto, BackupCodeConsumeDto, BackupCodesResponseDto, VerifyCodeDto, SetupStartResponseDto, TokenResponseDto, RefreshTokenDto } from '../dto';
+import {
+  LoginDto,
+  LoginResultDto,
+  SetupRequestDto,
+  SetupVerifyDto,
+  BackupCodeConsumeDto,
+  BackupCodesResponseDto,
+  VerifyCodeDto,
+  SetupStartResponseDto,
+  TokenResponseDto,
+  RefreshTokenDto,
+} from '../dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
@@ -46,7 +57,9 @@ export class AuthController {
   @Post('2fa/setup')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Start 2FA setup for admin without 2FA' })
-  async startSetup(@Body() body: SetupRequestDto): Promise<SetupStartResponseDto> {
+  async startSetup(
+    @Body() body: SetupRequestDto,
+  ): Promise<SetupStartResponseDto> {
     return this.authService.start2faSetup(body.sessionToken);
   }
 
@@ -54,7 +67,12 @@ export class AuthController {
   @Post('2fa/verify-setup')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify 2FA setup code and enable 2FA' })
-  async verifySetup(@Body() body: SetupVerifyDto): Promise<{ status: string; temporaryHash?: string; expiresAt?: Date }> {
+  @ApiResponse({
+    status: 200,
+    description: '2FA enabled and authentication successful',
+    type: TokenResponseDto,
+  })
+  async verifySetup(@Body() body: SetupVerifyDto): Promise<TokenResponseDto> {
     return this.authService.verify2faSetup(body.sessionToken, body.code);
   }
 
@@ -62,7 +80,9 @@ export class AuthController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Regenerate backup codes' })
-  async regenerateBackupCodes(@CurrentUser() user: AdminUser): Promise<BackupCodesResponseDto> {
+  async regenerateBackupCodes(
+    @CurrentUser() user: AdminUser,
+  ): Promise<BackupCodesResponseDto> {
     const codes = await this.authService.regenerateBackupCodes(user.id);
     return { codes };
   }
@@ -77,7 +97,9 @@ export class AuthController {
     type: TokenResponseDto,
   })
   @ApiResponse({ status: 401, description: 'Invalid backup code' })
-  async consumeBackupCode(@Body() body: BackupCodeConsumeDto): Promise<TokenResponseDto> {
+  async consumeBackupCode(
+    @Body() body: BackupCodeConsumeDto,
+  ): Promise<TokenResponseDto> {
     return this.authService.consumeBackupCode(body.temporaryHash, body.code);
   }
 
