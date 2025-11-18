@@ -18,6 +18,21 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(logger);
 
+  // Log request origin for debugging (before CORS to catch all requests)
+  // logger.log() maps to pino's 'info' level, which is included in production logs
+  app.use((req, res, next) => {
+    const origin = req.headers.origin || 'no-origin';
+    const method = req.method;
+    const path = req.path;
+    logger.log({
+      msg: 'Request received',
+      origin,
+      method,
+      path,
+    });
+    next();
+  });
+
   // CORS configuration - must be before global prefix
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim())
@@ -30,30 +45,7 @@ async function bootstrap(): Promise<void> {
       ];
 
   app.enableCors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, Postman)
-      if (!origin) {
-        return callback(null, true);
-      }
-
-      // Normalize origin (remove trailing slash, convert to lowercase for comparison)
-      const normalizedOrigin = origin.toLowerCase().replace(/\/$/, '');
-      const normalizedAllowed = allowedOrigins.map((o) =>
-        o.toLowerCase().replace(/\/$/, ''),
-      );
-
-      // Find the matching allowed origin (preserving original case)
-      const matchedOrigin = allowedOrigins.find(
-        (o) => o.toLowerCase().replace(/\/$/, '') === normalizedOrigin,
-      );
-
-      if (matchedOrigin) {
-        // Return the exact origin string (required when credentials: true)
-        callback(null, matchedOrigin);
-      } else {
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
+    origin: allowedOrigins,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
     allowedHeaders: [
