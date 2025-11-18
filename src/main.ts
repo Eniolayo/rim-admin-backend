@@ -36,51 +36,49 @@ async function bootstrap(): Promise<void> {
     /^https:\/\/(www\.)?rim-admin-frontend\.onrender\.com\/?$/,
   ];
 
+  // Function to check if origin is allowed
+  const isOriginAllowed = (origin: string | undefined): string | boolean => {
+    // Allow requests with no origin (like mobile apps or curl requests)
+    if (!origin) {
+      return true;
+    }
+
+    // Normalize origin for comparison (remove trailing slash and whitespace)
+    const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+
+    // Check exact string matches first
+    const exactMatch = allowedOriginStrings.some((allowedOrigin) => {
+      const normalizedAllowed = allowedOrigin.trim().replace(/\/+$/, '');
+      return normalizedOrigin === normalizedAllowed;
+    });
+
+    if (exactMatch) {
+      logger.warn(`CORS: Origin ${origin} allowed (exact match)`);
+      // Return the original origin string, not normalized
+      return origin;
+    }
+
+    // Check pattern matches
+    const patternMatch = allowedOriginPatterns.some((pattern) => {
+      return pattern.test(normalizedOrigin);
+    });
+
+    if (patternMatch) {
+      logger.warn(`CORS: Origin ${origin} allowed (pattern match)`);
+      // Return the original origin string, not normalized
+      return origin;
+    }
+
+    // Origin not allowed
+    logger.warn(`CORS: Origin ${origin} is NOT allowed`);
+    logger.warn(
+      `CORS: Allowed origins: ${JSON.stringify(allowedOriginStrings)}`,
+    );
+    return false;
+  };
+
   app.enableCors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) {
-        logger.debug('CORS: Request with no origin, allowing');
-        return callback(null, true);
-      }
-
-      // Normalize origin (remove trailing slash and whitespace)
-      const normalizedOrigin = origin.trim().replace(/\/+$/, '');
-
-      logger.debug(`CORS: Checking origin: ${normalizedOrigin}`);
-
-      // Check exact string matches first
-      const exactMatch = allowedOriginStrings.some((allowedOrigin) => {
-        const normalizedAllowed = allowedOrigin.trim().replace(/\/+$/, '');
-        return normalizedOrigin === normalizedAllowed;
-      });
-
-      if (exactMatch) {
-        logger.debug(
-          `CORS: Origin ${normalizedOrigin} is allowed (exact match)`,
-        );
-        return callback(null, true);
-      }
-
-      // Check pattern matches
-      const patternMatch = allowedOriginPatterns.some((pattern) => {
-        return pattern.test(normalizedOrigin);
-      });
-
-      if (patternMatch) {
-        logger.debug(
-          `CORS: Origin ${normalizedOrigin} is allowed (pattern match)`,
-        );
-        return callback(null, true);
-      }
-
-      // Origin not allowed
-      logger.warn(`CORS: Origin ${normalizedOrigin} is not allowed`);
-      logger.warn(
-        `CORS: Allowed origins: ${JSON.stringify(allowedOriginStrings)}`,
-      );
-      callback(new Error(`Not allowed by CORS: ${normalizedOrigin}`));
-    },
+    origin: isOriginAllowed,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: [
