@@ -21,43 +21,79 @@ async function bootstrap(): Promise<void> {
   app.useLogger(logger);
 
   // Enable CORS
-  const allowedOrigins = [
-    // Localhost with any port
-    /^http:\/\/localhost:\d+$/,
-    // Render.com domain
+  // Build list of allowed origins
+  const allowedOriginStrings: string[] = [
     'https://rim-admin-frontend.onrender.com',
-    // Additional origins from environment variable
     ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
       []),
+  ];
+
+  // Build list of allowed origin patterns (regex)
+  const allowedOriginPatterns: RegExp[] = [
+    // Localhost with any port (http and https)
+    /^https?:\/\/localhost:\d+$/,
+    // Render.com domain (with or without trailing slash, with or without www)
+    /^https:\/\/(www\.)?rim-admin-frontend\.onrender\.com\/?$/,
   ];
 
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin) {
+        logger.debug('CORS: Request with no origin, allowing');
         return callback(null, true);
       }
 
-      // Check if origin matches any allowed origin
-      const isAllowed = allowedOrigins.some((allowedOrigin) => {
-        if (typeof allowedOrigin === 'string') {
-          return origin === allowedOrigin;
-        }
-        if (allowedOrigin instanceof RegExp) {
-          return allowedOrigin.test(origin);
-        }
-        return false;
+      // Normalize origin (remove trailing slash and whitespace)
+      const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+
+      logger.debug(`CORS: Checking origin: ${normalizedOrigin}`);
+
+      // Check exact string matches first
+      const exactMatch = allowedOriginStrings.some((allowedOrigin) => {
+        const normalizedAllowed = allowedOrigin.trim().replace(/\/+$/, '');
+        return normalizedOrigin === normalizedAllowed;
       });
 
-      if (isAllowed) {
-        callback(null, true);
-      } else {
-        callback(new Error('Not allowed by CORS'));
+      if (exactMatch) {
+        logger.debug(
+          `CORS: Origin ${normalizedOrigin} is allowed (exact match)`,
+        );
+        return callback(null, true);
       }
+
+      // Check pattern matches
+      const patternMatch = allowedOriginPatterns.some((pattern) => {
+        return pattern.test(normalizedOrigin);
+      });
+
+      if (patternMatch) {
+        logger.debug(
+          `CORS: Origin ${normalizedOrigin} is allowed (pattern match)`,
+        );
+        return callback(null, true);
+      }
+
+      // Origin not allowed
+      logger.warn(`CORS: Origin ${normalizedOrigin} is not allowed`);
+      logger.warn(
+        `CORS: Allowed origins: ${JSON.stringify(allowedOriginStrings)}`,
+      );
+      callback(new Error(`Not allowed by CORS: ${normalizedOrigin}`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+    ],
+    exposedHeaders: ['Authorization'],
+    maxAge: 86400, // 24 hours
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // Global prefix
