@@ -18,19 +18,16 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(logger);
 
-  // CORS configuration
+  // CORS configuration - must be before global prefix
   const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim())
-    : nodeEnv === 'production'
-      ? [
-          'https://rim-admin-frontend.onrender.com',
-          'https://rim-admin.vercel.app',
-        ]
-      : [
-          'http://localhost:5173',
-          'http://localhost:3000',
-          'http://localhost:5174',
-        ];
+    : [
+        'https://rim-admin-frontend.onrender.com',
+        'https://rim-admin.vercel.app',
+        'http://localhost:5173',
+        'http://localhost:3000',
+        'http://localhost:5174',
+      ];
 
   app.enableCors({
     origin: (origin, callback) => {
@@ -38,8 +35,21 @@ async function bootstrap(): Promise<void> {
       if (!origin) {
         return callback(null, true);
       }
-      if (allowedOrigins.includes(origin)) {
-        callback(null, true);
+
+      // Normalize origin (remove trailing slash, convert to lowercase for comparison)
+      const normalizedOrigin = origin.toLowerCase().replace(/\/$/, '');
+      const normalizedAllowed = allowedOrigins.map((o) =>
+        o.toLowerCase().replace(/\/$/, ''),
+      );
+
+      // Find the matching allowed origin (preserving original case)
+      const matchedOrigin = allowedOrigins.find(
+        (o) => o.toLowerCase().replace(/\/$/, '') === normalizedOrigin,
+      );
+
+      if (matchedOrigin) {
+        // Return the exact origin string (required when credentials: true)
+        callback(null, matchedOrigin);
       } else {
         callback(new Error('Not allowed by CORS'));
       }
@@ -51,9 +61,12 @@ async function bootstrap(): Promise<void> {
       'Authorization',
       'x-skip-auth-redirect',
       'x-skip-error-toast',
+      'Accept',
     ],
     exposedHeaders: ['Content-Type', 'Authorization'],
     maxAge: 86400, // 24 hours
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
   });
 
   // Global prefix
