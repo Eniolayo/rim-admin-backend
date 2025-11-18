@@ -45,6 +45,9 @@ export class AdminInvitationResponseDto {
   @ApiProperty({ required: false })
   roleId?: string | null;
 
+  @ApiProperty({ required: false, description: 'Name of the role' })
+  roleName?: string | null;
+
   @ApiProperty()
   inviteToken: string;
 

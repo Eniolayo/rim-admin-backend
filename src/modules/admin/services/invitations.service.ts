@@ -57,12 +57,14 @@ export class InvitationsService {
 
   private toInvitationDto(
     invitation: AdminInvitation,
+    roleName?: string | null,
   ): AdminInvitationResponseDto {
     return {
       id: invitation.id,
       email: invitation.email,
       role: invitation.role,
       roleId: invitation.roleId,
+      roleName: roleName ?? null,
       inviteToken: invitation.inviteToken,
       invitedBy: invitation.invitedBy,
       invitedByName: invitation.invitedByName,
@@ -157,7 +159,7 @@ export class InvitationsService {
       await this.cacheService.invalidateInvitationsList();
 
       this.logger.log(`Successfully created invitation: ${saved.id}`);
-      return this.toInvitationDto(saved);
+      return this.toInvitationDto(saved, role.name);
     } catch (error) {
       // Re-throw known exceptions
       if (
@@ -184,7 +186,36 @@ export class InvitationsService {
 
       // Cache miss - fetch from database
       const invitations = await this.invitationRepository.findAll();
-      const result = invitations.map((inv) => this.toInvitationDto(inv));
+
+      // Fetch all unique role IDs (filter out null/undefined)
+      const roleIds = [
+        ...new Set(
+          invitations
+            .map((inv) => inv.roleId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+
+      // Fetch all roles in one query
+      const rolesMap = new Map<string, string>();
+      if (roleIds.length > 0) {
+        const roles = await Promise.all(
+          roleIds.map((id) => this.roleRepository.findById(id)),
+        );
+        roles.forEach((role) => {
+          if (role) {
+            rolesMap.set(role.id, role.name);
+          }
+        });
+      }
+
+      // Map invitations with role names
+      const result = invitations.map((inv) =>
+        this.toInvitationDto(
+          inv,
+          inv.roleId ? (rolesMap.get(inv.roleId) ?? null) : null,
+        ),
+      );
 
       // Populate cache
       await this.cacheService.setInvitationsList(result);
@@ -259,9 +290,23 @@ export class InvitationsService {
       }
 
       this.logger.log(`Token verified successfully: ${invitation.id}`);
+
+      // Fetch role name if roleId exists
+      let roleName: string | null = null;
+      if (invitation.roleId) {
+        try {
+          const role = await this.roleRepository.findById(invitation.roleId);
+          roleName = role?.name ?? null;
+        } catch (error) {
+          this.logger.warn(
+            `Failed to fetch role for invitation ${invitation.id}: ${error.message}`,
+          );
+        }
+      }
+
       const result = {
         valid: true,
-        invitation: this.toInvitationDto(invitation),
+        invitation: this.toInvitationDto(invitation, roleName),
       };
 
       // Cache the result
@@ -473,8 +518,21 @@ export class InvitationsService {
       // Invalidate old token cache if it exists
       await this.cacheService.invalidateVerifyToken(invitation.inviteToken);
 
+      // Fetch role name if roleId exists
+      let roleName: string | null = null;
+      if (updated.roleId) {
+        try {
+          const role = await this.roleRepository.findById(updated.roleId);
+          roleName = role?.name ?? null;
+        } catch (error) {
+          this.logger.warn(
+            `Failed to fetch role for invitation ${updated.id}: ${error.message}`,
+          );
+        }
+      }
+
       this.logger.log(`Successfully resent invitation: ${id}`);
-      return this.toInvitationDto(updated);
+      return this.toInvitationDto(updated, roleName);
     } catch (error) {
       // Re-throw known exceptions
       if (
