@@ -89,31 +89,64 @@ async function bootstrap(): Promise<void> {
   //   next();
   // });
 
-  app.enableCors();
-  // app.enableCors({
-  //   origin: (origin: string | undefined) => {
-  //     if (!origin) return true;
-  //     if (isOriginAllowed(origin)) {
-  //       logger.warn(`CORS: Allowing origin: ${origin}`);
-  //       return origin;
-  //     }
-  //     logger.warn(`CORS: REJECTING origin: ${origin}`);
-  //     return false;
-  //   },
-  //   credentials: true,
-  //   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  //   allowedHeaders: [
-  //     'Content-Type',
-  //     'Authorization',
-  //     'X-Requested-With',
-  //     'Accept',
-  //     'Origin',
-  //   ],
-  //   exposedHeaders: ['Authorization'],
-  //   maxAge: 86400,
-  //   preflightContinue: false,
-  //   optionsSuccessStatus: 204,
-  // });
+  // CORS Configuration - Must specify exact origins when using credentials
+  const allowedOrigins: string[] = [
+    'https://rim-admin-frontend.onrender.com',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://localhost:5174',
+    'http://localhost:8080',
+    ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
+      []),
+  ];
+
+  // Function to check if origin is allowed
+  const isOriginAllowed = (origin: string | undefined): boolean => {
+    if (!origin) {
+      // Allow requests with no origin (e.g., Postman, curl)
+      return true;
+    }
+
+    // Check exact matches
+    if (allowedOrigins.includes(origin)) {
+      return true;
+    }
+
+    // Check localhost with any port for development
+    if (/^https?:\/\/localhost:\d+$/.test(origin)) {
+      return true;
+    }
+
+    return false;
+  };
+
+  app.enableCors({
+    origin: (origin: string | undefined) => {
+      if (isOriginAllowed(origin)) {
+        // Return the exact origin (not '*') when credentials are enabled
+        // NestJS will use this origin string in the Access-Control-Allow-Origin header
+        return origin || true;
+      } else {
+        logger.warn(`CORS: REJECTING origin: ${origin}`);
+        return false;
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-Requested-With',
+      'Accept',
+      'Origin',
+      'x-skip-auth-redirect',
+      'x-skip-error-toast',
+    ],
+    exposedHeaders: ['Authorization'],
+    maxAge: 86400,
+    preflightContinue: false,
+    optionsSuccessStatus: 204,
+  });
 
   // Global prefix
   app.setGlobalPrefix(apiPrefix);
