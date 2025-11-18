@@ -18,7 +18,43 @@ async function bootstrap(): Promise<void> {
 
   app.useLogger(logger);
 
-  app.enableCors();
+  // CORS configuration
+  const allowedOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim())
+    : nodeEnv === 'production'
+      ? [
+          'https://rim-admin-frontend.onrender.com',
+          'https://rim-admin.vercel.app',
+        ]
+      : [
+          'http://localhost:5173',
+          'http://localhost:3000',
+          'http://localhost:5174',
+        ];
+
+  app.enableCors({
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps, curl, Postman)
+      if (!origin) {
+        return callback(null, true);
+      }
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'x-skip-auth-redirect',
+      'x-skip-error-toast',
+    ],
+    exposedHeaders: ['Content-Type', 'Authorization'],
+    maxAge: 86400, // 24 hours
+  });
 
   // Global prefix
   app.setGlobalPrefix(apiPrefix);
