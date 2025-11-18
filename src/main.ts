@@ -163,7 +163,10 @@ async function bootstrap(): Promise<void> {
   //   }),
   // );
 
-  const port = configService.get<number>('app.port', 3000);
+  // Get port from environment variable (Render provides PORT) or config
+  const port = process.env.PORT
+    ? parseInt(process.env.PORT, 10)
+    : configService.get<number>('app.port', 3000);
 
   // Swagger documentation
   const enableSwagger = configService.get<boolean>('app.enableSwagger', false);
@@ -217,23 +220,39 @@ async function bootstrap(): Promise<void> {
     // This allows the app to run without Redis if needed
   }
 
-  await app.listen(port);
+  // Listen on 0.0.0.0 to accept connections from outside the container (required for Render)
+  await app.listen(port, '0.0.0.0');
 
-  logger.log(
-    `Application is running on: http://localhost:${port}/${apiPrefix}`,
-  );
+  logger.log(`Application is running on: http://0.0.0.0:${port}/${apiPrefix}`);
 
   // Graceful shutdown
   process.on('SIGTERM', async () => {
     logger.log('SIGTERM received, shutting down gracefully...');
     try {
       const redisClient = app.get<Redis>(REDIS_CLIENT);
-      if (redisClient && redisClient.status === 'ready') {
-        await redisClient.quit();
-        logger.log('Redis connection closed');
+      if (
+        redisClient &&
+        (redisClient.status === 'ready' || redisClient.status === 'connect')
+      ) {
+        try {
+          await redisClient.quit();
+          logger.log('Redis connection closed');
+        } catch (error) {
+          // If quit fails, try disconnect
+          try {
+            redisClient.disconnect();
+            logger.log('Redis connection disconnected');
+          } catch (disconnectError) {
+            logger.warn('Redis already closed or error during disconnect');
+          }
+        }
       }
     } catch (error) {
-      logger.error('Error closing Redis connection:', error);
+      // Redis might not be available, continue with shutdown
+      logger.warn(
+        'Error closing Redis connection (continuing shutdown):',
+        error,
+      );
     }
     await app.close();
     process.exit(0);
@@ -243,12 +262,29 @@ async function bootstrap(): Promise<void> {
     logger.log('SIGINT received, shutting down gracefully...');
     try {
       const redisClient = app.get<Redis>(REDIS_CLIENT);
-      if (redisClient && redisClient.status === 'ready') {
-        await redisClient.quit();
-        logger.log('Redis connection closed');
+      if (
+        redisClient &&
+        (redisClient.status === 'ready' || redisClient.status === 'connect')
+      ) {
+        try {
+          await redisClient.quit();
+          logger.log('Redis connection closed');
+        } catch (error) {
+          // If quit fails, try disconnect
+          try {
+            redisClient.disconnect();
+            logger.log('Redis connection disconnected');
+          } catch (disconnectError) {
+            logger.warn('Redis already closed or error during disconnect');
+          }
+        }
       }
     } catch (error) {
-      logger.error('Error closing Redis connection:', error);
+      // Redis might not be available, continue with shutdown
+      logger.warn(
+        'Error closing Redis connection (continuing shutdown):',
+        error,
+      );
     }
     await app.close();
     process.exit(0);
