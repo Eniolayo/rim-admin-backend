@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query, Post, Body, Res, UseGuards, HttpCode, HttpStatus } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiExtraModels, getSchemaPath } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { TransactionsService } from '../services/transactions.service'
 import { TransactionResponseDto, TransactionStatsDto } from '../dto/transaction-response.dto'
 import { TransactionQueryDto } from '../dto/transaction-query.dto'
@@ -14,6 +15,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator'
 import { AdminUser } from '../../../entities/admin-user.entity'
 
 @ApiTags('transactions')
+@Throttle({ default: { limit: 100, ttl: 60000 } })
 @Controller('transactions')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()

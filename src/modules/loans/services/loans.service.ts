@@ -23,7 +23,7 @@ import {
 import { PaginatedResponseDto } from '../../users/dto/paginated-response.dto';
 import { Loan, LoanStatus, Network } from '../../../entities/loan.entity';
 import { AdminUser } from '../../../entities/admin-user.entity';
-import { User } from '../../../entities/user.entity';
+import { User, RepaymentStatus } from '../../../entities/user.entity';
 import { LoansCacheService } from './loans-cache.service';
 import { CreditScoreService } from '../../credit-score/services/credit-score.service';
 import { SystemConfigService } from '../../system-config/services/system-config.service';
@@ -1141,6 +1141,53 @@ export class LoansService {
     }
 
     const updatedLoan = await this.loanRepository.save(loan);
+
+    // Update user repayment status to PENDING when loan is disbursed
+    try {
+      const user = await this.userEntityRepository.findOne({
+        where: { id: loan.userId },
+      });
+      if (user) {
+        user.repaymentStatus = RepaymentStatus.PENDING;
+        await this.userEntityRepository.save(user);
+
+        // Invalidate user cache since repaymentStatus was updated
+        try {
+          await Promise.all([
+            this.usersCacheService.invalidateUser(user.id),
+            this.usersCacheService.invalidateUserList(),
+            this.usersCacheService.invalidateUserStats(),
+          ]);
+        } catch (cacheError) {
+          this.logger.warn(
+            {
+              error: cacheError instanceof Error ? cacheError.message : String(cacheError),
+              userId: user.id,
+            },
+            'Error invalidating user cache after repaymentStatus update',
+          );
+        }
+
+        this.logger.log(
+          {
+            loanId: updatedLoan.loanId,
+            userId: user.id,
+            repaymentStatus: RepaymentStatus.PENDING,
+          },
+          'User repayment status updated to PENDING after loan disbursement',
+        );
+      }
+    } catch (userUpdateError) {
+      // Log error but don't fail the disbursement
+      this.logger.warn(
+        {
+          error: userUpdateError instanceof Error ? userUpdateError.message : String(userUpdateError),
+          loanId: updatedLoan.loanId,
+          userId: loan.userId,
+        },
+        'Error updating user repayment status after loan disbursement',
+      );
+    }
 
     this.logger.log({ loanId: updatedLoan.loanId }, 'Loan disbursed');
 

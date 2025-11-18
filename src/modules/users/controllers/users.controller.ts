@@ -19,6 +19,7 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { UsersService } from '../services/users.service';
 import {
   CreateUserDto,
@@ -35,6 +36,7 @@ import { UserStatus } from '../../../entities/user.entity';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 @ApiTags('users')
+@Throttle({ default: { limit: 100, ttl: 60000 } })
 @Controller('users')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()

@@ -16,6 +16,7 @@ import {
   ApiTags,
   ApiParam,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { InvitationsService } from '../services/invitations.service';
 import {
   InviteAdminDto,
@@ -33,6 +34,7 @@ import { ActivityLogInterceptor } from '../interceptors/activity-log.interceptor
 import { AdminUser } from '../../../entities/admin-user.entity';
 
 @ApiTags('admin-invitations')
+@Throttle({ default: { limit: 100, ttl: 60000 } })
 @Controller('admin/invitations')
 export class InvitationsController {
   private readonly logger = new Logger(InvitationsController.name);

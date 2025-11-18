@@ -1,11 +1,13 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { RolesService } from '../services/roles.service'
 import { CreateRoleDto, RoleResponseDto, UpdateRoleDto } from '../dto/role.dto'
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
 
 @ApiTags('admin-roles')
 @ApiBearerAuth()
+@Throttle({ default: { limit: 100, ttl: 60000 } })
 @UseGuards(JwtAuthGuard)
 @Controller('admin/roles')
 export class RolesController {

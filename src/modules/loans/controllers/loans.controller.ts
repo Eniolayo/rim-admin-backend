@@ -19,6 +19,7 @@ import {
   ApiExtraModels,
   getSchemaPath,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { LoansService } from '../services/loans.service';
 import {
   CreateLoanDto,
@@ -39,6 +40,7 @@ import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { AdminUser } from '../../../entities/admin-user.entity';
 
 @ApiTags('loans')
+@Throttle({ default: { limit: 100, ttl: 60000 } })
 @Controller('loans')
 @UseGuards(JwtAuthGuard)
 @ApiBearerAuth()

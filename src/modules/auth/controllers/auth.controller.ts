@@ -14,6 +14,7 @@ import {
   ApiBody,
   ApiBearerAuth,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from '../services/auth.service';
 import {
   LoginDto,
@@ -39,6 +40,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
@@ -54,6 +56,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('2fa/setup')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Start 2FA setup for admin without 2FA' })
@@ -64,6 +67,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('2fa/verify-setup')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify 2FA setup code and enable 2FA' })
@@ -76,6 +80,7 @@ export class AuthController {
     return this.authService.verify2faSetup(body.sessionToken, body.code);
   }
 
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('2fa/backup-codes/regenerate')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
@@ -88,6 +93,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('2fa/backup-codes/consume')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Consume a backup code for MFA' })
@@ -104,6 +110,7 @@ export class AuthController {
   }
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Refresh access token using refresh token' })

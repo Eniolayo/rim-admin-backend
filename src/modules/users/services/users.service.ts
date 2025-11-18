@@ -42,7 +42,7 @@ export class UsersService {
   ) {}
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
-    this.logger.log({ phone: createUserDto.phone }, 'Creating new user');
+    this.logger.log(`Creating new user with phone: ${createUserDto.phone}`);
 
     // Check if a user with this phone number already exists
     const existingUser = await this.userRepository.findByPhone(
@@ -60,6 +60,8 @@ export class UsersService {
 
     // Generate userId
     const userId = await this.generateUserId();
+    this.logger.log(`Generated userId: ${userId}`);
+    this.logger.log(`Creating user with phone: ${createUserDto.phone}`);
 
     // Get first-time user default credit score from system config
     let creditScore = 0;
@@ -70,15 +72,11 @@ export class UsersService {
         0,
       );
       this.logger.debug(
-        { creditScore },
-        'Using first-time user default credit score',
+        `Using first-time user default credit score: ${creditScore}`,
       );
     } catch (error) {
       this.logger.warn(
-        {
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Error getting first_timer_default_score, using default 0',
+        `Error getting first_timer_default_score, using default 0: ${error instanceof Error ? error.message : String(error)}`,
       );
       creditScore = 0;
     }
@@ -136,18 +134,22 @@ export class UsersService {
 
       creditLimit = calculatedLimit;
       this.logger.debug(
-        { creditScore, creditLimit },
-        'Calculated credit limit from thresholds',
+        `Calculated credit limit from thresholds: ${creditScore} -> ${creditLimit}`,
       );
     } catch (error) {
       this.logger.warn(
-        {
-          error: error instanceof Error ? error.message : String(error),
-        },
-        'Error getting thresholds, using default 0',
+        `Error getting thresholds, using default 0: ${error instanceof Error ? error.message : String(error)}`,
       );
       creditLimit = 0;
     }
+
+    const UserIdIsNotUnique = await this.userRepository.findByUserId(userId);
+    if (UserIdIsNotUnique) {
+      throw new BadRequestException(
+        `User ID ${userId} is not unique. Please try again.`,
+      );
+    }
+    this.logger.log(`User ID is not unique: ${userId}`);
 
     const user = this.repository.create({
       ...createUserDto,
@@ -161,8 +163,10 @@ export class UsersService {
       totalLoans: 0,
     });
 
+    this.logger.log(`User created: ${JSON.stringify(user)}`);
+
     const savedUser = await this.userRepository.save(user);
-    this.logger.log({ userId: savedUser.userId }, 'User created');
+    this.logger.log(`User saved: ${JSON.stringify(savedUser)}`);
 
     // Invalidate cache - list and stats changed
     try {
@@ -173,8 +177,7 @@ export class UsersService {
     } catch (error) {
       // Cache invalidation error - log but don't fail
       this.logger.warn(
-        { error: error instanceof Error ? error.message : String(error) },
-        'Error invalidating cache after user creation',
+        `Error invalidating cache after user creation: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
 
@@ -207,8 +210,7 @@ export class UsersService {
       } catch (error) {
         // Cache error - fallback to database
         this.logger.warn(
-          { error: error instanceof Error ? error.message : String(error) },
-          'Cache error, falling back to database',
+          `Cache error, falling back to database: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
 
@@ -233,8 +235,7 @@ export class UsersService {
         } catch (error) {
           // Cache error - continue without caching
           this.logger.warn(
-            { error: error instanceof Error ? error.message : String(error) },
-            'Error caching user list',
+            `Error caching user list: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
 
@@ -268,8 +269,7 @@ export class UsersService {
       } catch (error) {
         // Cache error - continue without caching
         this.logger.warn(
-          { error: error instanceof Error ? error.message : String(error) },
-          'Error caching user list',
+          `Error caching user list: ${error instanceof Error ? error.message : String(error)}`,
         );
       }
 
@@ -672,12 +672,22 @@ export class UsersService {
   }
 
   private async generateUserId(): Promise<string> {
-    const year = new Date().getFullYear();
-    const count = await this.userRepository.countByUserIdPattern(
-      `USR-${year}-%`,
-    );
-    const sequence = String(count + 1).padStart(3, '0');
-    return `USR-${year}-${sequence}`;
+    const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excludes 0, O, I, 1 for clarity
+    let suffix = '';
+    for (let i = 0; i < 6; i++) {
+      suffix += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    
+    const userId = `USR-${suffix}`;
+    
+    // Ensure uniqueness
+    const exists = await this.userRepository.findByUserId(userId);
+    if (exists) {
+      // Retry if collision (very rare)
+      return this.generateUserId();
+    }
+    
+    return userId;
   }
 
   private mapToResponse(user: User): UserResponseDto {
