@@ -22,74 +22,81 @@ async function bootstrap(): Promise<void> {
 
   // Enable CORS
   // Build list of allowed origins
-  const allowedOriginStrings: string[] = [
-    'https://rim-admin-frontend.onrender.com',
-    ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
-      []),
-  ];
+  // const allowedOriginStrings: string[] = [
+  //   'https://rim-admin-frontend.onrender.com',
+  //   ...(process.env.CORS_ORIGIN?.split(',').map((origin) => origin.trim()) ||
+  //     []),
+  // ];
 
-  // Build list of allowed origin patterns (regex)
-  const allowedOriginPatterns: RegExp[] = [
-    // Localhost with any port (http and https)
-    /^https?:\/\/localhost:\d+$/,
-    // Render.com domain (with or without trailing slash, with or without www)
-    /^https:\/\/(www\.)?rim-admin-frontend\.onrender\.com\/?$/,
-  ];
+  // // Build list of allowed origin patterns (regex)
+  // const allowedOriginPatterns: RegExp[] = [
+  //   // Localhost with any port (http and https)
+  //   /^https?:\/\/localhost:\d+$/,
+  //   // Render.com domain (with or without trailing slash, with or without www)
+  //   /^https:\/\/(www\.)?rim-admin-frontend\.onrender\.com\/?$/,
+  // ];
 
-  // Function to check if origin is allowed
-  const isOriginAllowed = (origin: string | undefined): string | boolean => {
-    // Allow requests with no origin (like mobile apps or curl requests)
-    if (!origin) {
-      return true;
-    }
+  // // Function to check if origin is allowed
+  // const isOriginAllowed = (origin: string | undefined): string | boolean => {
+  //   // Allow requests with no origin (like mobile apps or curl requests)
+  //   if (!origin) {
+  //     return true;
+  //   }
 
-    // Normalize origin for comparison (remove trailing slash and whitespace)
-    const normalizedOrigin = origin.trim().replace(/\/+$/, '');
+  //   // Normalize origin for comparison (remove trailing slash and whitespace)
+  //   const normalizedOrigin = origin.trim().replace(/\/+$/, '');
 
-    // Check exact string matches first
-    const exactMatch = allowedOriginStrings.some((allowedOrigin) => {
-      const normalizedAllowed = allowedOrigin.trim().replace(/\/+$/, '');
-      return normalizedOrigin === normalizedAllowed;
-    });
+  //   // Check exact string matches first
+  //   const exactMatch = allowedOriginStrings.some((allowedOrigin) => {
+  //     const normalizedAllowed = allowedOrigin.trim().replace(/\/+$/, '');
+  //     return normalizedOrigin === normalizedAllowed;
+  //   });
 
-    if (exactMatch) {
-      logger.warn(`CORS: Origin ${origin} allowed (exact match)`);
-      // Return the original origin string, not normalized
-      return origin;
-    }
+  //   if (exactMatch) {
+  //     logger.warn(`CORS: Origin ${origin} allowed (exact match)`);
+  //     // Return the original origin string, not normalized
+  //     return origin;
+  //   }
 
-    // Check pattern matches
-    const patternMatch = allowedOriginPatterns.some((pattern) => {
-      return pattern.test(normalizedOrigin);
-    });
+  //   // Check pattern matches
+  //   const patternMatch = allowedOriginPatterns.some((pattern) => {
+  //     return pattern.test(normalizedOrigin);
+  //   });
 
-    if (patternMatch) {
-      logger.warn(`CORS: Origin ${origin} allowed (pattern match)`);
-      // Return the original origin string, not normalized
-      return origin;
-    }
+  //   if (patternMatch) {
+  //     logger.warn(`CORS: Origin ${origin} allowed (pattern match)`);
+  //     // Return the original origin string, not normalized
+  //     return origin;
+  //   }
 
-    // Origin not allowed
-    logger.warn(`CORS: Origin ${origin} is NOT allowed`);
-    logger.warn(
-      `CORS: Allowed origins: ${JSON.stringify(allowedOriginStrings)}`,
-    );
-    return false;
-  };
+  //   // Origin not allowed
+  //   logger.warn(`CORS: Origin ${origin} is NOT allowed`);
+  //   logger.warn(
+  //     `CORS: Allowed origins: ${JSON.stringify(allowedOriginStrings)}`,
+  //   );
+  //   return false;
+  // };
 
+  // app.enableCors({
+  //   origin: isOriginAllowed,
+  //   credentials: true,
+  //   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  //   allowedHeaders: [
+  //     'Content-Type',
+  //     'Authorization',
+  //     'X-Requested-With',
+  //     'Accept',
+  //     'Origin',
+  //   ],
+  //   exposedHeaders: ['Authorization'],
+  //   maxAge: 86400, // 24 hours
+  //   preflightContinue: false,
+  //   optionsSuccessStatus: 204,
+  // });
   app.enableCors({
-    origin: isOriginAllowed,
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: [
-      'Content-Type',
-      'Authorization',
-      'X-Requested-With',
-      'Accept',
-      'Origin',
-    ],
-    exposedHeaders: ['Authorization'],
-    maxAge: 86400, // 24 hours
+    origin: '*',
+    methods: '*',
+    allowedHeaders: '*',
     preflightContinue: false,
     optionsSuccessStatus: 204,
   });
