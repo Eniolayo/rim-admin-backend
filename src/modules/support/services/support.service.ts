@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, Logger } from '@nestjs/common'
+import { InjectRepository } from '@nestjs/typeorm'
+import { Repository } from 'typeorm'
 import { TicketRepository } from '../repositories/ticket.repository'
 import { MessageRepository } from '../repositories/message.repository'
 import { HistoryRepository } from '../repositories/history.repository'
@@ -8,21 +10,29 @@ import { CreateTicketDto, UpdateTicketDto, AssignTicketDto, EscalateTicketDto, S
 import { ChatMessage, MessageSenderType } from '../../../entities/chat-message.entity'
 import { SupportTicket, TicketStatus } from '../../../entities/support-ticket.entity'
 import { TicketHistory } from '../../../entities/ticket-history.entity'
+import { AdminUser } from '../../../entities/admin-user.entity'
+import { SupportAgent } from '../../../entities/support-agent.entity'
 
 @Injectable()
 export class SupportService {
+  private readonly logger = new Logger(SupportService.name)
+  private systemAdminIdCache: string | null = null
+
   constructor(
     private readonly tickets: TicketRepository,
     private readonly messages: MessageRepository,
     private readonly history: HistoryRepository,
     private readonly agents: AgentRepository,
     private readonly departments: DepartmentRepository,
+    @InjectRepository(AdminUser)
+    private readonly adminUserRepository: Repository<AdminUser>,
   ) {}
 
   async getTickets(filters: TicketFiltersDto): Promise<SupportTicket[]> {
+    this.logger.log(`Getting tickets with filters: status ${filters.status}, priority ${filters.priority}, category ${filters.category}, assignedTo ${filters.assignedTo}, department ${filters.department}, search ${filters.search}, dateFrom ${filters.dateFrom}, dateTo ${filters.dateTo}, customerId ${filters.customerId}, escalatedTo ${filters.escalatedTo}`)
     const df = filters.dateFrom ? new Date(filters.dateFrom) : undefined
     const dt = filters.dateTo ? new Date(filters.dateTo) : undefined
-    return this.tickets.findAll({
+    const tickets = await this.tickets.findAll({
       status: filters.status,
       priority: filters.priority,
       category: filters.category,
@@ -31,23 +41,33 @@ export class SupportService {
       search: filters.search,
       dateFrom: df,
       dateTo: dt,
+      customerId: filters.customerId,
+      escalatedTo: filters.escalatedTo,
     })
+    this.logger.log(`Retrieved ${tickets.length} tickets matching filters`)
+    return tickets
   }
 
   async getTicketById(id: string): Promise<SupportTicket> {
+    this.logger.log(`Getting ticket by id ${id}`)
     const t = await this.tickets.findById(id)
-    if (!t) throw new NotFoundException('Ticket not found')
+    if (!t) {
+      this.logger.log(`Ticket not found with id ${id}`)
+      throw new NotFoundException('Ticket not found')
+    }
+    this.logger.log(`Ticket retrieved successfully with id ${id} and ticket number ${t.ticketNumber}`)
     return t
   }
 
-  async createTicket(dto: CreateTicketDto): Promise<SupportTicket> {
+  async createTicket(dto: CreateTicketDto, user?: AdminUser): Promise<SupportTicket> {
+    this.logger.log(`Creating ticket for customer id ${dto.customerId ?? 'null'} and customer name ${dto.customerName ?? 'null'} and customer email ${dto.customerEmail ?? 'null'} and customer phone ${dto.customerPhone ?? 'null'} with subject ${dto.subject} and category ${dto.category} and priority ${dto.priority} by user id ${user?.id ?? 'null'} and user username ${user?.username ?? 'null'}`)
     const number = await this.tickets.generateTicketNumber()
     const ticket: SupportTicket = Object.assign(new SupportTicket(), {
       ticketNumber: number,
-      customerId: dto.customerId,
-      customerName: dto.customerName,
-      customerPhone: dto.customerPhone,
-      customerEmail: dto.customerEmail,
+      customerId: dto.customerId ?? null,
+      customerName: dto.customerName ?? null,
+      customerPhone: dto.customerPhone ?? null,
+      customerEmail: dto.customerEmail ?? null,
       subject: dto.subject,
       description: dto.description,
       category: dto.category,
@@ -55,24 +75,63 @@ export class SupportService {
       status: TicketStatus.OPEN,
       messageCount: 0,
       tags: dto.tags ?? null,
+      department: dto.department ?? null,
     })
     const saved = await this.tickets.save(ticket)
-    await this.history.save(Object.assign(new TicketHistory(), { ticketId: saved.id, action: 'ticket_created', performedBy: dto.customerId, performedByName: dto.customerName }))
+    const performedBy = user?.id ?? await this.getSystemAdminId()
+    const performedByName = user?.username ?? 'System'
+    await this.history.save(Object.assign(new TicketHistory(), { ticketId: saved.id, action: 'ticket_created', performedBy, performedByName }))
+    this.logger.log(`Ticket created successfully with id ${saved.id} and ticket number ${saved.ticketNumber} for customer id ${saved.customerId ?? 'null'} and customer name ${saved.customerName ?? 'null'} and customer email ${saved.customerEmail ?? 'null'} and customer phone ${saved.customerPhone ?? 'null'}`)
     return saved
   }
 
-  async updateTicket(id: string, dto: UpdateTicketDto): Promise<SupportTicket> {
+  private async getSystemAdminId(): Promise<string> {
+    if (this.systemAdminIdCache) {
+      return this.systemAdminIdCache
+    }
+    const firstAdmin = await this.adminUserRepository.findOne({ order: { createdAt: 'ASC' } })
+    if (!firstAdmin) {
+      throw new Error('No admin user found in database. Cannot create ticket history.')
+    }
+    this.systemAdminIdCache = firstAdmin.id
+    return firstAdmin.id
+  }
+
+  async updateTicket(id: string, dto: UpdateTicketDto, user?: AdminUser): Promise<SupportTicket> {
+    this.logger.log(`Updating ticket with id ${id} by user id ${user?.id} and user username ${user?.username} with dto ${JSON.stringify(dto)}`)
     const t = await this.getTicketById(id)
+    const prevStatus = t.status
+    const prevPriority = t.priority
     const patch: Partial<SupportTicket> = { ...dto }
     if (dto.status === TicketStatus.RESOLVED && !t.resolvedAt) {
       patch.resolvedAt = new Date()
+      patch.resolvedBy = user?.id ?? t.resolvedBy ?? null
     }
     await this.tickets.update(id, patch)
     const updated = await this.getTicketById(id)
+    if (dto.status && dto.status !== prevStatus) {
+      const performedBy = user?.id ?? await this.getSystemAdminId()
+      await this.history.save(Object.assign(new TicketHistory(), { ticketId: updated.id, action: dto.status === TicketStatus.RESOLVED ? 'ticket_resolved' : dto.status === TicketStatus.CLOSED ? 'ticket_closed' : 'status_changed', performedBy, performedByName: (user?.username ?? 'System') }))
+      if ((dto.status === TicketStatus.RESOLVED || dto.status === TicketStatus.CLOSED) && t.assignedTo) {
+        const a = await this.agents.findById(t.assignedTo)
+        if (a) {
+          a.activeTickets = Math.max(0, (a.activeTickets || 0) - 1)
+          await this.agents.save(a)
+        }
+      }
+      this.logger.log(`Ticket status changed from ${prevStatus} to ${dto.status} for ticket id ${id} by user id ${user?.id} and user username ${user?.username}`)
+    }
+    if (dto.priority && dto.priority !== prevPriority) {
+      const performedBy = user?.id ?? await this.getSystemAdminId()
+      await this.history.save(Object.assign(new TicketHistory(), { ticketId: updated.id, action: 'priority_changed', performedBy, performedByName: (user?.username ?? 'System'), details: `Priority changed to ${dto.priority}` }))
+      this.logger.log(`Ticket priority changed from ${prevPriority} to ${dto.priority} for ticket id ${id} by user id ${user?.id} and user username ${user?.username}`)
+    }
+    this.logger.log(`Ticket updated successfully with id ${id} and ticket number ${updated.ticketNumber}`)
     return updated
   }
 
-  async assignTicket(dto: AssignTicketDto): Promise<SupportTicket> {
+  async assignTicket(dto: AssignTicketDto, user?: AdminUser): Promise<SupportTicket> {
+    this.logger.log(`Assigning ticket with id ${dto.ticketId} to agent id ${dto.agentId} by user id ${user?.id ?? 'null'} and user username ${user?.username ?? 'null'}`)
     const t = await this.getTicketById(dto.ticketId)
     const agent = await this.agents.findById(dto.agentId)
     const patch: Partial<SupportTicket> = {
@@ -81,70 +140,125 @@ export class SupportService {
       status: t.status === TicketStatus.OPEN ? TicketStatus.IN_PROGRESS : t.status,
     }
     await this.tickets.update(t.id, patch)
+    if (agent) {
+      agent.activeTickets = (agent.activeTickets || 0) + 1
+      await this.agents.save(agent)
+    }
     const updated = await this.getTicketById(t.id)
-    await this.history.save(Object.assign(new TicketHistory(), { ticketId: updated.id, action: 'ticket_assigned', performedBy: dto.agentId, performedByName: updated.assignedToName ?? 'Agent', details: `Assigned to ${updated.assignedToName}` }))
+    const performedBy = user?.id ?? await this.getSystemAdminId()
+    await this.history.save(Object.assign(new TicketHistory(), { ticketId: updated.id, action: 'ticket_assigned', performedBy, performedByName: user?.username ?? 'System', details: `Assigned to ${updated.assignedToName}` }))
+    this.logger.log(`Ticket assigned successfully with ticket id ${updated.id} and ticket number ${updated.ticketNumber} to agent id ${dto.agentId} and agent name ${updated.assignedToName}`)
     return updated
   }
 
-  async escalateTicket(dto: EscalateTicketDto): Promise<SupportTicket> {
+  async escalateTicket(dto: EscalateTicketDto, user?: AdminUser): Promise<SupportTicket> {
+    this.logger.log(`Escalating ticket with id ${dto.ticketId} to agent id ${dto.agentId} and admin id ${dto.adminId} with reason ${dto.reason} by user id ${user?.id ?? 'null'} and user username ${user?.username ?? 'null'}`)
     const t = await this.getTicketById(dto.ticketId)
     let escalatedName: string | null = null
+    let newAgent: SupportAgent | null = null
+    let escalatedToId: string | null = null
+    
     if (dto.agentId) {
       const a = await this.agents.findById(dto.agentId)
+      newAgent = a
       escalatedName = a?.name ?? null
+      escalatedToId = dto.agentId
+    } else if (dto.adminId) {
+      const admin = await this.adminUserRepository.findOne({ where: { id: dto.adminId } })
+      if (!admin) {
+        throw new NotFoundException(`Admin with id ${dto.adminId} not found`)
+      }
+      escalatedName = admin.username ?? null
+      escalatedToId = dto.adminId
     }
+    
     const patch: Partial<SupportTicket> = {
       status: TicketStatus.ESCALATED,
-      escalatedTo: dto.agentId ?? null,
+      escalatedTo: escalatedToId,
       escalatedToName: escalatedName,
-      department: dto.department ?? t.department ?? null,
+      department: t.department ?? null,
     }
     await this.tickets.update(t.id, patch)
+    if (t.assignedTo) {
+      const prevAgent = await this.agents.findById(t.assignedTo)
+      if (prevAgent) {
+        prevAgent.activeTickets = Math.max(0, (prevAgent.activeTickets || 0) - 1)
+        await this.agents.save(prevAgent)
+      }
+    }
+    if (newAgent) {
+      newAgent.activeTickets = (newAgent.activeTickets || 0) + 1
+      await this.agents.save(newAgent)
+    }
     const updated = await this.getTicketById(t.id)
-    await this.history.save(Object.assign(new TicketHistory(), { ticketId: updated.id, action: 'ticket_escalated', performedBy: updated.assignedTo ?? 'system', performedByName: updated.assignedToName ?? 'Agent', details: dto.reason }))
+    const performedBy = user?.id ?? await this.getSystemAdminId()
+    await this.history.save(Object.assign(new TicketHistory(), { ticketId: updated.id, action: 'ticket_escalated', performedBy, performedByName: user?.username ?? 'System', details: dto.reason }))
+    this.logger.log(`Ticket escalated successfully with ticket id ${updated.id} and ticket number ${updated.ticketNumber} to ${dto.agentId ? 'agent' : 'admin'} id ${escalatedToId} and name ${escalatedName}`)
     return updated
   }
 
   async getMessages(ticketId: string) {
-    return this.messages.findByTicketId(ticketId)
+    this.logger.log(`Getting messages for ticket id ${ticketId}`)
+    const messages = await this.messages.findByTicketId(ticketId)
+    this.logger.log(`Retrieved ${messages.length} messages for ticket id ${ticketId}`)
+    return messages
   }
 
-  async sendMessage(dto: SendMessageDto): Promise<ChatMessage> {
+  async sendMessage(dto: SendMessageDto, user?: AdminUser): Promise<ChatMessage> {
+    this.logger.log(`Sending message for ticket id ${dto.ticketId} by user id ${user?.id} and user username ${user?.username}`)
     const t = await this.getTicketById(dto.ticketId)
+    const senderId = user?.id ?? await this.getSystemAdminId()
+    const senderName = user?.username ?? 'System'
     const msg = Object.assign(new ChatMessage(), {
       ticketId: dto.ticketId,
-      senderId: 'current-agent',
-      senderName: 'Current Agent',
+      senderId,
+      senderName,
       senderType: MessageSenderType.AGENT,
       message: dto.message,
       isRead: false,
     })
     const saved = await this.messages.save(msg)
     await this.tickets.update(t.id, { messageCount: t.messageCount + 1, lastMessageAt: new Date() })
+    await this.history.save(Object.assign(new TicketHistory(), { ticketId: t.id, action: 'message_sent', performedBy: senderId, performedByName: senderName }))
+    this.logger.log(`Message sent successfully with id ${saved.id} for ticket id ${dto.ticketId} and ticket number ${t.ticketNumber} by user id ${user?.id} and user username ${user?.username}`)
     return saved
   }
 
   async getAgents() {
-    return this.agents.findAll()
+    this.logger.log(`Getting all support agents`)
+    const agents = await this.agents.findAll()
+    this.logger.log(`Retrieved ${agents.length} support agents`)
+    return agents
   }
 
   async getDepartments() {
-    return this.departments.findAll()
+    this.logger.log(`Getting all departments`)
+    const departments = await this.departments.findAll()
+    this.logger.log(`Retrieved ${departments.length} departments`)
+    return departments
   }
 
   async getTicketStats() {
-    return this.tickets.stats()
+    this.logger.log(`Getting ticket statistics`)
+    const stats = await this.tickets.stats()
+    this.logger.log(`Ticket statistics retrieved: total ${stats.totalTickets}, open ${stats.openTickets}, in progress ${stats.inProgressTickets}, resolved ${stats.resolvedTickets}, escalated ${stats.escalatedTickets}`)
+    return stats
   }
 
   async getTicketHistory(ticketId: string) {
-    return this.history.findByTicketId(ticketId)
+    this.logger.log(`Getting ticket history for ticket id ${ticketId}`)
+    const history = await this.history.findByTicketId(ticketId)
+    this.logger.log(`Retrieved ${history.length} history entries for ticket id ${ticketId}`)
+    return history
   }
 
   async sendNotification(ticketId: string, type: 'email' | 'sms') {
+    this.logger.log(`Sending ${type} notification for ticket id ${ticketId}`)
     return true
   }
 
   async bulkAssign(dto: BulkAssignDto) {
+    this.logger.log(`Bulk assigning ${dto.ticketIds.length} tickets with ids ${dto.ticketIds.join(', ')} to agent id ${dto.agentId}`)
     const agent = await this.agents.findById(dto.agentId)
     await this.tickets.bulkUpdate(dto.ticketIds, {
       assignedTo: dto.agentId,
@@ -152,42 +266,60 @@ export class SupportService {
       status: TicketStatus.IN_PROGRESS,
     })
     const updated = await Promise.all(dto.ticketIds.map(id => this.getTicketById(id)))
+    this.logger.log(`Bulk assign completed successfully for ${updated.length} tickets to agent id ${dto.agentId} and agent name ${agent?.name}`)
     return updated
   }
 
   async bulkResolve(dto: BulkResolveDto) {
+    this.logger.log(`Bulk resolving ${dto.ticketIds.length} tickets with ids ${dto.ticketIds.join(', ')} with resolution ${dto.resolution ?? 'Bulk resolved.'}`)
     await this.tickets.bulkUpdate(dto.ticketIds, {
       status: TicketStatus.RESOLVED,
-      resolution: 'Bulk resolved.',
+      resolution: dto.resolution ?? 'Bulk resolved.',
       resolvedAt: new Date(),
     })
     const updated = await Promise.all(dto.ticketIds.map(id => this.getTicketById(id)))
+    this.logger.log(`Bulk resolve completed successfully for ${updated.length} tickets`)
     return updated
   }
 
   async bulkStatus(dto: BulkStatusDto) {
+    this.logger.log(`Bulk updating status to ${dto.status} for ${dto.ticketIds.length} tickets with ids ${dto.ticketIds.join(', ')}`)
     await this.tickets.bulkUpdate(dto.ticketIds, { status: dto.status })
     const updated = await Promise.all(dto.ticketIds.map(id => this.getTicketById(id)))
+    this.logger.log(`Bulk status update completed successfully for ${updated.length} tickets to status ${dto.status}`)
     return updated
   }
 
   async bulkNotify(dto: BulkNotifyDto) {
+    this.logger.log(`Bulk notifying ${dto.ticketIds.length} tickets with ids ${dto.ticketIds.join(', ')} with type ${dto.type}`)
     return true
   }
 
   async bulkEscalate(dto: BulkEscalateDto) {
+    this.logger.log(`Bulk escalating ${dto.ticketIds.length} tickets with ids ${dto.ticketIds.join(', ')} to agent id ${dto.agentId} and admin id ${dto.adminId}`)
     let escalatedName: string | null = null
+    let escalatedToId: string | null = null
+    
     if (dto.agentId) {
       const a = await this.agents.findById(dto.agentId)
       escalatedName = a?.name ?? null
+      escalatedToId = dto.agentId
+    } else if (dto.adminId) {
+      const admin = await this.adminUserRepository.findOne({ where: { id: dto.adminId } })
+      if (!admin) {
+        throw new NotFoundException(`Admin with id ${dto.adminId} not found`)
+      }
+      escalatedName = admin.username ?? null
+      escalatedToId = dto.adminId
     }
+    
     await this.tickets.bulkUpdate(dto.ticketIds, {
       status: TicketStatus.ESCALATED,
-      escalatedTo: dto.agentId ?? null,
+      escalatedTo: escalatedToId,
       escalatedToName: escalatedName,
-      department: dto.department ?? null,
     })
     const updated = await Promise.all(dto.ticketIds.map(id => this.getTicketById(id)))
+    this.logger.log(`Bulk escalate completed successfully for ${updated.length} tickets to ${dto.agentId ? 'agent' : 'admin'} id ${escalatedToId} and name ${escalatedName}`)
     return updated
   }
 }

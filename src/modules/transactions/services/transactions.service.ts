@@ -242,6 +242,45 @@ export class TransactionsService {
       }
     }
 
+    // Validate repayment amount doesn't exceed outstanding amount
+    const outstandingAmount = Number(loan.outstandingAmount);
+    const repaymentAmount = Number(payload.amount);
+
+    if (repaymentAmount > outstandingAmount) {
+      throw new BadRequestException(
+        `Repayment amount (${repaymentAmount}) cannot exceed the outstanding amount (${outstandingAmount}) for loan ${loan.loanId}`,
+      );
+    }
+
+    // Query all existing repayment transactions for this loan
+    const existingRepayments = await this.transactionRepository
+      .createQueryBuilder('transaction')
+      .where('transaction.loanId = :loanId', { loanId: loan.id })
+      .andWhere('transaction.type = :type', { type: TransactionType.REPAYMENT })
+      .getMany();
+
+    // Calculate total from completed repayments
+    const completedRepaymentsTotal = existingRepayments
+      .filter((t) => t.status === TransactionStatus.COMPLETED)
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    // Calculate total from pending repayments
+    const pendingRepaymentsTotal = existingRepayments
+      .filter((t) => t.status === TransactionStatus.PENDING)
+      .reduce((sum, t) => sum + Number(t.amount), 0);
+
+    // Calculate total potential repayments (completed + pending + new)
+    const totalPotentialRepayments =
+      completedRepaymentsTotal + pendingRepaymentsTotal + repaymentAmount;
+
+    // Validate that total repayments don't exceed loan amount
+    const loanAmountDue = Number(loan.amountDue);
+    if (totalPotentialRepayments > loanAmountDue) {
+      throw new BadRequestException(
+        `Total repayments (${totalPotentialRepayments}) cannot exceed the loan amount due (${loanAmountDue}) for loan ${loan.loanId}. Current completed: ${completedRepaymentsTotal}, pending: ${pendingRepaymentsTotal}`,
+      );
+    }
+
     // Generate transaction ID
     const transactionId = await this.generateTransactionId();
 
@@ -310,14 +349,7 @@ export class TransactionsService {
       );
     }
 
-    this.logger.log(
-      {
-        transactionId: reconciledTransaction.transactionId,
-        loanId: loan.loanId,
-        amount: payload.amount,
-      },
-      'Repayment transaction created and reconciled successfully',
-    );
+    this.logger.log(`Repayment transaction created and reconciled successfully for loan ${loan.loanId} with amount ${payload.amount} and transaction id ${reconciledTransaction.transactionId} and admin id ${adminId} and user id ${user.id} and user phone ${user.phone} and user email ${user.email}`);
 
     return this.mapToResponse(reconciledTransaction);
   }

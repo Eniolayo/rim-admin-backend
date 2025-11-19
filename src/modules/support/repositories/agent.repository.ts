@@ -17,5 +17,9 @@ export class AgentRepository {
   async findById(id: string): Promise<SupportAgent | null> {
     return this.repository.findOne({ where: { id } })
   }
+
+  async save(agent: SupportAgent): Promise<SupportAgent> {
+    return this.repository.save(agent)
+  }
 }
 

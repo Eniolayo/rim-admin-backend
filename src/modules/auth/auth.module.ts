@@ -44,6 +44,7 @@ import { PermissionsGuard } from './guards/permissions.guard';
     PendingLoginRepository,
     BackupCodeRepository,
     PermissionsGuard,
+    JwtModule,
   ],
 })
 export class AuthModule {}

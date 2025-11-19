@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 import {
   Controller,
   Get,
@@ -17,6 +16,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { UsersService } from '../services/users.service';
 import {
   AdminUserResponseDto,
@@ -28,17 +28,6 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { RequireSuperAdmin } from '../../auth/decorators/require-super-admin.decorator';
 import { AdminMgmtUserRepository } from '../repositories/user.repository';
-=======
-import { Controller, Get, Patch, Param, Query, Body, UseGuards, Logger, NotFoundException } from '@nestjs/common'
-import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger'
-import { Throttle } from '@nestjs/throttler'
-import { UsersService } from '../services/users.service'
-import { AdminUserResponseDto, AdminUserFiltersDto, UpdateAdminStatusDto } from '../dto/admin-user.dto'
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
-import { PermissionsGuard } from '../../auth/guards/permissions.guard'
-import { RequireSuperAdmin } from '../../auth/decorators/require-super-admin.decorator'
-import { AdminMgmtUserRepository } from '../repositories/user.repository'
->>>>>>> Stashed changes
 
 @ApiTags('admin-users')
 @ApiBearerAuth()

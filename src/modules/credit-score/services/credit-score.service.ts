@@ -148,9 +148,29 @@ export class CreditScoreService {
     // Update loan amountPaid and outstandingAmount
     const repaymentAmount = Number(transaction.amount);
     const currentAmountPaid = Number(loan.amountPaid);
+    const loanAmountDue = Number(loan.amountDue);
     const newAmountPaid = currentAmountPaid + repaymentAmount;
-    loan.amountPaid = newAmountPaid;
-    loan.outstandingAmount = Number(loan.amountDue) - newAmountPaid;
+    
+    // Safety check: prevent amountPaid from exceeding amountDue
+    // Clamp to amountDue if it would exceed
+    const clampedAmountPaid = Math.min(newAmountPaid, loanAmountDue);
+    loan.amountPaid = clampedAmountPaid;
+    loan.outstandingAmount = Math.max(0, loanAmountDue - clampedAmountPaid);
+    
+    // Log warning if clamping occurred
+    if (clampedAmountPaid < newAmountPaid) {
+      this.logger.warn(
+        {
+          loanId,
+          transactionId,
+          attemptedAmountPaid: newAmountPaid,
+          clampedAmountPaid,
+          loanAmountDue,
+          repaymentAmount,
+        },
+        'Clamped amountPaid to prevent exceeding amountDue',
+      );
+    }
 
     // Update loan status
     const wasCompleted = loan.status === LoanStatus.COMPLETED;
