@@ -33,6 +33,7 @@ import {
   formatRoleName,
   formatRoleNameNullable,
 } from '../../../common/utils/role.utils';
+import { EmailService } from '../../email/email.service';
 
 @Injectable()
 export class InvitationsService {
@@ -42,6 +43,7 @@ export class InvitationsService {
     private readonly adminUserRepository: AdminUserRepository,
     private readonly adminMgmtUserRepository: AdminMgmtUserRepository,
     private readonly cacheService: InvitationsCacheService,
+    private readonly emailService: EmailService,
     private readonly logger: Logger,
   ) {}
 
@@ -162,6 +164,24 @@ export class InvitationsService {
 
       // Invalidate list cache after creating new invitation
       await this.cacheService.invalidateInvitationsList();
+
+      // Send invitation email
+      try {
+        await this.emailService.sendAdminInvitationEmail(
+          saved.email,
+          saved.inviteToken,
+          role.name,
+          saved.invitedByName,
+          saved.expiresAt,
+        );
+        this.logger.log(`Invitation email sent to ${saved.email}`);
+      } catch (emailError) {
+        // Log error but don't fail the invitation creation
+        this.logger.error(
+          `Failed to send invitation email to ${saved.email}: ${emailError.message}`,
+          emailError.stack,
+        );
+      }
 
       this.logger.log(`Successfully created invitation: ${saved.id}`);
       return this.toInvitationDto(saved, role.name);
@@ -529,6 +549,24 @@ export class InvitationsService {
         try {
           const role = await this.roleRepository.findById(updated.roleId);
           roleName = role?.name ?? null;
+
+          // Send invitation email
+          try {
+            await this.emailService.sendAdminInvitationEmail(
+              updated.email,
+              updated.inviteToken,
+              roleName || 'Admin',
+              updated.invitedByName,
+              updated.expiresAt,
+            );
+            this.logger.log(`Resent invitation email to ${updated.email}`);
+          } catch (emailError) {
+            // Log error but don't fail the resend operation
+            this.logger.error(
+              `Failed to send resend invitation email to ${updated.email}: ${emailError.message}`,
+              emailError.stack,
+            );
+          }
         } catch (error) {
           this.logger.warn(
             `Failed to fetch role for invitation ${updated.id}: ${error.message}`,

@@ -8,7 +8,7 @@ import {
 import { Logger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User } from '../../../entities/user.entity';
+import { User, RepaymentStatus } from '../../../entities/user.entity';
 import { Loan, LoanStatus } from '../../../entities/loan.entity';
 import {
   Transaction,
@@ -148,9 +148,29 @@ export class CreditScoreService {
     // Update loan amountPaid and outstandingAmount
     const repaymentAmount = Number(transaction.amount);
     const currentAmountPaid = Number(loan.amountPaid);
+    const loanAmountDue = Number(loan.amountDue);
     const newAmountPaid = currentAmountPaid + repaymentAmount;
-    loan.amountPaid = newAmountPaid;
-    loan.outstandingAmount = Number(loan.amountDue) - newAmountPaid;
+    
+    // Safety check: prevent amountPaid from exceeding amountDue
+    // Clamp to amountDue if it would exceed
+    const clampedAmountPaid = Math.min(newAmountPaid, loanAmountDue);
+    loan.amountPaid = clampedAmountPaid;
+    loan.outstandingAmount = Math.max(0, loanAmountDue - clampedAmountPaid);
+    
+    // Log warning if clamping occurred
+    if (clampedAmountPaid < newAmountPaid) {
+      this.logger.warn(
+        {
+          loanId,
+          transactionId,
+          attemptedAmountPaid: newAmountPaid,
+          clampedAmountPaid,
+          loanAmountDue,
+          repaymentAmount,
+        },
+        'Clamped amountPaid to prevent exceeding amountDue',
+      );
+    }
 
     // Update loan status
     const wasCompleted = loan.status === LoanStatus.COMPLETED;
@@ -167,7 +187,13 @@ export class CreditScoreService {
     const currentTotalRepaid = Number(user.totalRepaid);
     user.totalRepaid = currentTotalRepaid + repaymentAmount;
 
+    // Update user repayment status based on loan repayment status
     const isFullRepayment = loan.outstandingAmount <= 0;
+    if (isFullRepayment) {
+      user.repaymentStatus = RepaymentStatus.COMPLETED;
+    } else if (loan.amountPaid > 0) {
+      user.repaymentStatus = RepaymentStatus.PARTIAL;
+    }
 
     const calculationResult = await this.calculatePointsForRepayment(
       repaymentAmount,
@@ -180,9 +206,9 @@ export class CreditScoreService {
     const points = calculationResult.points;
 
     if (points <= 0) {
-      // Even if no points awarded, still save user to persist totalRepaid update
+      // Even if no points awarded, still save user to persist totalRepaid and repaymentStatus update
       await this.userRepository.save(user);
-      // Invalidate user cache since totalRepaid was updated
+      // Invalidate user cache since totalRepaid and repaymentStatus were updated
       try {
         await Promise.all([
           this.usersCacheService.invalidateUser(user.id),
@@ -195,7 +221,7 @@ export class CreditScoreService {
             error: error instanceof Error ? error.message : String(error),
             userId: user.id,
           },
-          'Error invalidating user cache after totalRepaid update',
+          'Error invalidating user cache after totalRepaid and repaymentStatus update',
         );
       }
       return { pointsAwarded: 0, newScore: user.creditScore };
@@ -257,7 +283,7 @@ export class CreditScoreService {
 
     await this.userRepository.save(user);
 
-    // Invalidate user cache since creditScore, totalRepaid, and possibly creditLimit were updated
+    // Invalidate user cache since creditScore, totalRepaid, repaymentStatus, and possibly creditLimit were updated
     try {
       await Promise.all([
         this.usersCacheService.invalidateUser(user.id),
@@ -270,7 +296,7 @@ export class CreditScoreService {
           error: error instanceof Error ? error.message : String(error),
           userId: user.id,
         },
-        'Error invalidating user cache after credit score and totalRepaid update',
+        'Error invalidating user cache after credit score, totalRepaid, and repaymentStatus update',
       );
     }
 

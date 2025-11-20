@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Put, UseGuards } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
+import { Throttle } from '@nestjs/throttler'
 import { SettingsService } from '../services/settings.service'
 import { TwoFactorSettingsResponseDto, TwoFactorSettingsUpdateDto } from '../dto/twofa-settings.dto'
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
@@ -8,6 +9,7 @@ import { AdminUser } from '../../../entities/admin-user.entity'
 
 @ApiTags('admin-settings')
 @ApiBearerAuth()
+@Throttle({ default: { limit: 100, ttl: 60000 } })
 @UseGuards(JwtAuthGuard)
 @Controller('admin/settings/2fa')
 export class SettingsController {

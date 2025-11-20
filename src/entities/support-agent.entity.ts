@@ -1,4 +1,5 @@
-import { Entity, Column, PrimaryGeneratedColumn, Index } from 'typeorm'
+import { Entity, Column, PrimaryGeneratedColumn, Index, ManyToOne, JoinColumn } from 'typeorm'
+import { AdminUser } from './admin-user.entity'
 
 export enum AgentStatus {
   AVAILABLE = 'available',
@@ -7,9 +8,9 @@ export enum AgentStatus {
 }
 
 @Entity('SUPPORT_AGENTS')
-@Index(['email'], { unique: true })
 @Index(['department'])
 @Index(['status'])
+@Index(['adminUserId'])
 export class SupportAgent {
   @PrimaryGeneratedColumn('uuid')
   id: string
@@ -17,7 +18,7 @@ export class SupportAgent {
   @Column({ type: 'varchar', length: 255 })
   name: string
 
-  @Column({ type: 'varchar', length: 255, unique: true })
+  @Column({ type: 'varchar', length: 255 })
   email: string
 
   @Column({ type: 'varchar', length: 255 })
@@ -34,5 +35,12 @@ export class SupportAgent {
 
   @Column({ type: 'enum', enum: AgentStatus })
   status: AgentStatus
+
+  @Column({ type: 'uuid' })
+  adminUserId: string
+
+  @ManyToOne(() => AdminUser, { nullable: false })
+  @JoinColumn({ name: 'adminUserId' })
+  adminUser: AdminUser
 }
 

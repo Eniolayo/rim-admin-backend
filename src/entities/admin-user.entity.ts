@@ -3,12 +3,14 @@ import {
   Column,
   PrimaryGeneratedColumn,
   ManyToOne,
+  OneToOne,
   JoinColumn,
   CreateDateColumn,
   Index,
 } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import { AdminRole } from './admin-role.entity';
+import { SupportAgent } from './support-agent.entity';
 
 export enum AdminUserStatus {
   ACTIVE = 'active',
@@ -74,4 +76,7 @@ export class AdminUser {
   @ManyToOne(() => AdminUser, { nullable: true })
   @JoinColumn({ name: 'createdBy' })
   creator: AdminUser | null;
+
+  @OneToOne(() => SupportAgent, (agent) => agent.adminUser, { nullable: true })
+  supportAgent: SupportAgent | null;
 }

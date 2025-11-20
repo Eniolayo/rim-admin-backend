@@ -16,6 +16,7 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { UsersService } from '../services/users.service';
 import {
   AdminUserResponseDto,
@@ -30,6 +31,7 @@ import { AdminMgmtUserRepository } from '../repositories/user.repository';
 
 @ApiTags('admin-users')
 @ApiBearerAuth()
+@Throttle({ default: { limit: 100, ttl: 60000 } })
 @UseGuards(JwtAuthGuard)
 @Controller('admin/users')
 export class UsersController {

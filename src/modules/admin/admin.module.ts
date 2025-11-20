@@ -27,6 +27,7 @@ import { SecuritySettingsRepository } from './repositories/settings.repository';
 import { ActivityLogInterceptor } from './interceptors/activity-log.interceptor';
 import { ActivityLogProcessor } from './processors/activity-log.processor';
 import { AuthModule } from '../auth/auth.module';
+import { EmailModule } from '../email/email.module';
 import { RedisConfig } from '../../config/redis.config';
 
 @Module({
@@ -71,6 +72,7 @@ import { RedisConfig } from '../../config/redis.config';
       name: 'activity-logs',
     }),
     AuthModule,
+    EmailModule,
   ],
   controllers: [
     RolesController,

@@ -42,7 +42,11 @@
     "seed:loan-config": "ts-node -r tsconfig-paths/register src/database/seeds/loan-config.seed.ts",
     "seed:loan-config:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:loan-config",
     "seed:credit-score-config": "ts-node -r tsconfig-paths/register src/database/seeds/credit-score-config.seed.ts",
-    "seed:credit-score-config:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:credit-score-config"
+    "seed:credit-score-config:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:credit-score-config",
+    "seed:support": "ts-node -r tsconfig-paths/register src/database/seeds/support.seed.ts",
+    "seed:support:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:support",
+    "script:delete-support-agents": "ts-node -r tsconfig-paths/register src/database/scripts/delete-support-agents.ts",
+    "script:delete-support-agents:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run script:delete-support-agents"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",
@@ -52,9 +56,13 @@
     "@nestjs/jwt": "^10.2.0",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^11.0.1",
+    "@nestjs/platform-socket.io": "^11.1.9",
     "@nestjs/swagger": "^7.3.0",
+    "@nestjs/throttler": "^6.0.0",
     "@nestjs/typeorm": "^10.0.2",
+    "@nestjs/websockets": "^11.1.9",
     "@types/ioredis": "^4.28.10",
+    "@types/nodemailer": "^7.0.4",
     "bcrypt": "^5.1.1",
     "bullmq": "^5.63.2",
     "class-transformer": "^0.5.1",
@@ -62,6 +70,7 @@
     "ioredis": "^5.8.2",
     "joi": "^17.13.3",
     "nestjs-pino": "^4.1.0",
+    "nodemailer": "^7.0.10",
     "otplib": "^12.0.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
@@ -72,6 +81,7 @@
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "socket.io": "^4.8.1",
     "typeorm": "^0.3.20",
     "uuid": "^9.0.1"
   },

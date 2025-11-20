@@ -7,6 +7,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { Public } from '../decorators/public.decorator';
 import { AuthService } from '../services/auth.service';
 import { VerifyCodeDto, TokenResponseDto } from '../dto';
@@ -17,6 +18,7 @@ export class AdminController {
   constructor(private readonly authService: AuthService) {}
 
   @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
   @Post(':temporaryHash')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify admin 2FA code and issue JWT' })

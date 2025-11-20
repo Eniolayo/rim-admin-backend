@@ -2,6 +2,7 @@ import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { APP_GUARD, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import * as Joi from 'joi';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
@@ -11,6 +12,8 @@ import databaseConfig, { DatabaseConfig } from './config/database.config';
 import jwtConfig from './config/jwt.config';
 import appConfig from './config/app.config';
 import redisConfig from './config/redis.config';
+import throttleConfig from './config/throttle.config';
+import emailConfig from './config/email.config';
 import {
   AdminUser,
   AdminRole,
@@ -48,7 +51,14 @@ import { CreditScoreModule } from './modules/credit-score/credit-score.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
-      load: [databaseConfig, jwtConfig, appConfig, redisConfig],
+      load: [
+        databaseConfig,
+        jwtConfig,
+        appConfig,
+        redisConfig,
+        throttleConfig,
+        emailConfig,
+      ],
       validationSchema: Joi.object({
         NODE_ENV: Joi.string()
           .valid('development', 'production', 'test', 'staging')
@@ -102,6 +112,17 @@ import { CreditScoreModule } from './modules/credit-score/credit-score.module';
         REDIS_PASSWORD: Joi.string().optional(),
         REDIS_USERNAME: Joi.string().optional(),
         REDIS_TTL: Joi.number().optional().default(3600),
+        // Email configuration
+        EMAIL_HOST: Joi.string().optional().default('smtp.zeptomail.com'),
+        EMAIL_PORT: Joi.number().port().optional().default(587),
+        EMAIL_USER: Joi.string().optional().default('emailapikey'),
+        EMAIL_PASS: Joi.string().optional(),
+        EMAIL_FROM: Joi.string().email().optional().default('noreply@rim.ng'),
+        EMAIL_FROM_NAME: Joi.string().optional().default('RIM Team'),
+        FRONTEND_URL: Joi.string()
+          .uri()
+          .optional()
+          .default('http://localhost:5173'),
       }),
       validationOptions: {
         abortEarly: false,
@@ -146,6 +167,19 @@ import { CreditScoreModule } from './modules/credit-score/credit-score.module';
         };
       },
     }),
+    ThrottlerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const throttle = configService.get('throttle');
+        return [
+          {
+            ttl: throttle.ttl,
+            limit: throttle.limit,
+          },
+        ];
+      },
+    }),
     LoggerModule,
     RedisModule,
     AuthModule,
@@ -180,6 +214,10 @@ import { CreditScoreModule } from './modules/credit-score/credit-score.module';
     {
       provide: APP_GUARD,
       useClass: AdminTwoFactorGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
     {
       provide: APP_INTERCEPTOR,

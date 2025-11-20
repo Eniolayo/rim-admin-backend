@@ -1,5 +1,4 @@
 import { Entity, Column, PrimaryGeneratedColumn, CreateDateColumn, UpdateDateColumn, Index, ManyToOne, JoinColumn } from 'typeorm'
-import { User } from './user.entity'
 import { AdminUser } from './admin-user.entity'
 
 export enum TicketStatus {
@@ -41,17 +40,17 @@ export class SupportTicket {
   @Column({ type: 'varchar', length: 255, unique: true })
   ticketNumber: string
 
-  @Column({ type: 'uuid' })
-  customerId: string
+  @Column({ type: 'uuid', nullable: true })
+  customerId: string | null
 
-  @Column({ type: 'varchar', length: 255 })
-  customerName: string
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  customerName: string | null
 
-  @Column({ type: 'varchar', length: 255 })
-  customerPhone: string
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  customerPhone: string | null
 
-  @Column({ type: 'varchar', length: 255 })
-  customerEmail: string
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  customerEmail: string | null
 
   @Column({ type: 'varchar', length: 255 })
   subject: string
@@ -106,10 +105,6 @@ export class SupportTicket {
 
   @UpdateDateColumn({ type: 'timestamp' })
   updatedAt: Date
-
-  @ManyToOne(() => User, { eager: false })
-  @JoinColumn({ name: 'customerId' })
-  customer: User
 
   @ManyToOne(() => AdminUser, { eager: false, nullable: true })
   @JoinColumn({ name: 'resolvedBy' })

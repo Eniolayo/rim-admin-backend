@@ -63,6 +63,13 @@ services:
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      EMAIL_HOST: ${EMAIL_HOST:-smtp.zeptomail.com}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_USER: ${EMAIL_USER:-emailapikey}
+      EMAIL_PASS: ${EMAIL_PASS:-wSsVR61wqUP4Df9/m2D/ce1qygtQA1OiRx91iVv36XP+SK/B9cdtnxecDAWgSaRKGWZtFGYQpLsvmkxU0mcMit54mF8AXiiF9mqRe1U4J3x17qnvhDzNXGlekBOPLYMAzwhqnWlhF8oq+g==}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@rim.ng}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-RIM Team}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
     depends_on:
       postgres:
         condition: service_healthy
