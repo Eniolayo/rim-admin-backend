@@ -1,208 +1,232 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { TicketStatus, TicketPriority, TicketCategory } from '../../../entities/support-ticket.entity'
-import { MessageSenderType } from '../../../entities/chat-message.entity'
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  TicketStatus,
+  TicketPriority,
+  TicketCategory,
+} from '../../../entities/support-ticket.entity';
+import { MessageSenderType } from '../../../entities/chat-message.entity';
 
 export class TicketResponseDto {
   @ApiProperty()
-  id: string
+  id: string;
 
   @ApiProperty()
-  ticketNumber: string
+  ticketNumber: string;
 
   @ApiProperty()
-  customerId: string
+  customerId: string;
 
   @ApiProperty()
-  customerName: string
+  customerName: string;
 
   @ApiProperty()
-  customerPhone: string
+  customerPhone: string;
 
   @ApiProperty()
-  customerEmail: string
+  customerEmail: string;
 
   @ApiProperty()
-  subject: string
+  subject: string;
 
   @ApiProperty()
-  description: string
+  description: string;
 
   @ApiProperty({ enum: TicketCategory })
-  category: TicketCategory
+  category: TicketCategory;
 
   @ApiProperty({ enum: TicketPriority })
-  priority: TicketPriority
+  priority: TicketPriority;
 
   @ApiProperty({ enum: TicketStatus })
-  status: TicketStatus
+  status: TicketStatus;
 
   @ApiPropertyOptional()
-  assignedTo: string | null
+  assignedTo: string | null;
 
   @ApiPropertyOptional()
-  assignedToName: string | null
+  assignedToName: string | null;
 
   @ApiPropertyOptional()
-  department: string | null
+  department: string | null;
 
   @ApiPropertyOptional()
-  escalatedTo: string | null
+  escalatedTo: string | null;
 
   @ApiPropertyOptional()
-  escalatedToName: string | null
+  escalatedToName: string | null;
 
   @ApiPropertyOptional()
-  resolution: string | null
+  resolution: string | null;
 
   @ApiPropertyOptional()
-  resolvedAt: Date | null
+  resolvedAt: Date | null;
 
   @ApiPropertyOptional()
-  resolvedBy: string | null
+  resolvedBy: string | null;
 
   @ApiPropertyOptional()
-  lastMessageAt: Date | null
+  lastMessageAt: Date | null;
 
   @ApiProperty()
-  messageCount: number
+  messageCount: number;
 
   @ApiPropertyOptional({ type: [String] })
-  tags: string[] | null
+  tags: string[] | null;
 
   @ApiProperty()
-  createdAt: Date
+  createdAt: Date;
 
   @ApiProperty()
-  updatedAt: Date
+  updatedAt: Date;
 }
 
 export class ChatMessageDto {
   @ApiProperty()
-  id: string
+  id: string;
 
   @ApiProperty()
-  ticketId: string
+  ticketId: string;
 
   @ApiProperty()
-  senderId: string
+  senderId: string;
 
   @ApiProperty()
-  senderName: string
+  senderName: string;
 
   @ApiProperty({ enum: MessageSenderType })
-  senderType: MessageSenderType
+  senderType: MessageSenderType;
 
   @ApiProperty()
-  message: string
+  message: string;
 
   @ApiPropertyOptional({ type: 'object' })
-  attachments: Array<{ id: string; name: string; url: string; size: number; type: string }> | null
+  attachments: Array<{
+    id: string;
+    name: string;
+    url: string;
+    size: number;
+    type: string;
+  }> | null;
 
   @ApiProperty()
-  isRead: boolean
+  isRead: boolean;
 
   @ApiProperty()
-  createdAt: Date
+  createdAt: Date;
 }
 
 export class TicketStatsDto {
   @ApiProperty()
-  totalTickets: number
+  totalTickets: number;
 
   @ApiProperty()
-  openTickets: number
+  openTickets: number;
 
   @ApiProperty()
-  inProgressTickets: number
+  inProgressTickets: number;
 
   @ApiProperty()
-  resolvedTickets: number
+  resolvedTickets: number;
 
   @ApiProperty()
-  escalatedTickets: number
+  escalatedTickets: number;
 
   @ApiProperty()
-  avgResolutionTime: number
+  unassignedTickets: number;
 
   @ApiProperty()
-  ticketsToday: number
+  avgResolutionTime: number;
 
   @ApiProperty()
-  ticketsThisWeek: number
+  ticketsToday: number;
+
+  @ApiProperty()
+  ticketsThisWeek: number;
 
   @ApiProperty({ type: 'object' })
-  ticketsByPriority: { urgent: number; high: number; medium: number; low: number }
+  ticketsByPriority: {
+    urgent: number;
+    high: number;
+    medium: number;
+    low: number;
+  };
 
   @ApiProperty({ type: 'object' })
-  ticketsByCategory: { technical: number; billing: number; account: number; loan: number; general: number; transaction: number }
+  ticketsByCategory: {
+    technical: number;
+    billing: number;
+    account: number;
+    loan: number;
+    general: number;
+    transaction: number;
+  };
 }
 
 export class TicketHistoryDto {
   @ApiProperty()
-  id: string
+  id: string;
 
   @ApiProperty()
-  ticketId: string
+  ticketId: string;
 
   @ApiProperty()
-  action: string
+  action: string;
 
   @ApiProperty()
-  performedBy: string
+  performedBy: string;
 
   @ApiProperty()
-  performedByName: string
+  performedByName: string;
 
   @ApiPropertyOptional()
-  details: string | null
+  details: string | null;
 
   @ApiProperty()
-  timestamp: Date
+  timestamp: Date;
 }
 
 export class SupportAgentDto {
   @ApiProperty()
-  id: string
+  id: string;
 
   @ApiProperty()
-  name: string
+  name: string;
 
   @ApiProperty()
-  email: string
+  email: string;
 
   @ApiProperty()
-  phone: string
+  phone: string;
 
   @ApiProperty()
-  department: string
+  department: string;
 
   @ApiProperty()
-  tier: number
+  tier: number;
 
   @ApiProperty()
-  activeTickets: number
+  activeTickets: number;
 
   @ApiProperty()
-  status: string
+  status: string;
 
   @ApiProperty({ required: false })
-  adminUserId?: string
+  adminUserId?: string;
 }
 
 export class DepartmentDto {
   @ApiProperty()
-  id: string
+  id: string;
 
   @ApiProperty()
-  name: string
+  name: string;
 
   @ApiProperty()
-  description: string
+  description: string;
 
   @ApiProperty()
-  tier: number
+  tier: number;
 
   @ApiProperty()
-  agentCount: number
+  agentCount: number;
 }
-

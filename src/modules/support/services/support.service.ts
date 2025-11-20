@@ -74,6 +74,42 @@ export class SupportService {
       customerId: filters.customerId,
       escalatedTo: filters.escalatedTo,
     });
+
+    // Populate missing assignedToName values
+    const ticketsNeedingName = tickets.filter(
+      (t) => t.assignedTo && !t.assignedToName,
+    );
+    if (ticketsNeedingName.length > 0) {
+      this.logger.log(
+        `Found ${ticketsNeedingName.length} tickets with missing assignedToName, populating...`,
+      );
+      for (const ticket of ticketsNeedingName) {
+        if (!ticket.assignedTo) continue;
+
+        // Try to find as agent first
+        const agent = await this.agents.findById(ticket.assignedTo);
+        if (agent) {
+          ticket.assignedToName = agent.name;
+          // Update the database to persist the name
+          await this.tickets.update(ticket.id, {
+            assignedToName: agent.name,
+          });
+        } else {
+          // Try to find as admin
+          const admin = await this.adminUserRepository.findOne({
+            where: { id: ticket.assignedTo },
+          });
+          if (admin) {
+            ticket.assignedToName = admin.username;
+            // Update the database to persist the name
+            await this.tickets.update(ticket.id, {
+              assignedToName: admin.username,
+            });
+          }
+        }
+      }
+    }
+
     this.logger.log(`Retrieved ${tickets.length} tickets matching filters`);
     return tickets;
   }
@@ -85,6 +121,33 @@ export class SupportService {
       this.logger.log(`Ticket not found with id ${id}`);
       throw new NotFoundException('Ticket not found');
     }
+
+    // Populate missing assignedToName if needed
+    if (t.assignedTo && !t.assignedToName) {
+      this.logger.log(`Ticket ${id} has missing assignedToName, populating...`);
+      // Try to find as agent first
+      const agent = await this.agents.findById(t.assignedTo);
+      if (agent) {
+        t.assignedToName = agent.name;
+        // Update the database to persist the name
+        await this.tickets.update(t.id, {
+          assignedToName: agent.name,
+        });
+      } else {
+        // Try to find as admin
+        const admin = await this.adminUserRepository.findOne({
+          where: { id: t.assignedTo },
+        });
+        if (admin) {
+          t.assignedToName = admin.username;
+          // Update the database to persist the name
+          await this.tickets.update(t.id, {
+            assignedToName: admin.username,
+          });
+        }
+      }
+    }
+
     this.logger.log(
       `Ticket retrieved successfully with id ${id} and ticket number ${t.ticketNumber}`,
     );
@@ -590,7 +653,7 @@ export class SupportService {
     this.logger.log(`Getting ticket statistics`);
     const stats = await this.tickets.stats();
     this.logger.log(
-      `Ticket statistics retrieved: total ${stats.totalTickets}, open ${stats.openTickets}, in progress ${stats.inProgressTickets}, resolved ${stats.resolvedTickets}, escalated ${stats.escalatedTickets}`,
+      `Ticket statistics retrieved: total ${stats.totalTickets}, open ${stats.openTickets}, in progress ${stats.inProgressTickets}, resolved ${stats.resolvedTickets}, escalated ${stats.escalatedTickets}, unassigned ${stats.unassignedTickets}`,
     );
     return stats;
   }
