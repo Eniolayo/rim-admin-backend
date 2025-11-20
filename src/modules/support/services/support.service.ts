@@ -7,6 +7,9 @@ import { HistoryRepository } from '../repositories/history.repository'
 import { AgentRepository } from '../repositories/agent.repository'
 import { DepartmentRepository } from '../repositories/department.repository'
 import { CreateTicketDto, UpdateTicketDto, AssignTicketDto, EscalateTicketDto, SendMessageDto, TicketFiltersDto, BulkAssignDto, BulkResolveDto, BulkStatusDto, BulkNotifyDto, BulkEscalateDto } from '../dto/ticket.dto'
+import { CreateDepartmentDto, UpdateDepartmentDto } from '../dto/department.dto'
+import { Department } from '../../../entities/department.entity'
+import { AdminRole } from '../../../entities/admin-role.entity'
 import { ChatMessage, MessageSenderType } from '../../../entities/chat-message.entity'
 import { SupportTicket, TicketStatus } from '../../../entities/support-ticket.entity'
 import { TicketHistory } from '../../../entities/ticket-history.entity'
@@ -26,6 +29,8 @@ export class SupportService {
     private readonly departments: DepartmentRepository,
     @InjectRepository(AdminUser)
     private readonly adminUserRepository: Repository<AdminUser>,
+    @InjectRepository(AdminRole)
+    private readonly adminRoleRepository: Repository<AdminRole>,
   ) {}
 
   async getTickets(filters: TicketFiltersDto): Promise<SupportTicket[]> {
@@ -236,6 +241,69 @@ export class SupportService {
     const departments = await this.departments.findAll()
     this.logger.log(`Retrieved ${departments.length} departments`)
     return departments
+  }
+
+  async getDepartmentById(id: string): Promise<Department> {
+    this.logger.log(`Getting department by id ${id}`)
+    const department = await this.departments.findById(id)
+    if (!department) {
+      this.logger.log(`Department not found with id ${id}`)
+      throw new NotFoundException('Department not found')
+    }
+    this.logger.log(`Department retrieved successfully with id ${id} and name ${department.name}`)
+    return department
+  }
+
+  async createDepartment(dto: CreateDepartmentDto): Promise<Department> {
+    this.logger.log(`Creating department with name ${dto.name} and description ${dto.description} and tier ${dto.tier}`)
+    const department: Department = Object.assign(new Department(), {
+      name: dto.name,
+      description: dto.description,
+      tier: dto.tier,
+      agentCount: 0,
+    })
+    const saved = await this.departments.save(department)
+    this.logger.log(`Department created successfully with id ${saved.id} and name ${saved.name}`)
+    return saved
+  }
+
+  async updateDepartment(id: string, dto: UpdateDepartmentDto): Promise<Department> {
+    this.logger.log(`Updating department with id ${id} with dto ${JSON.stringify(dto)}`)
+    const department = await this.getDepartmentById(id)
+    const patch: Partial<Department> = { ...dto }
+    await this.departments.update(id, patch)
+    const updated = await this.getDepartmentById(id)
+    this.logger.log(`Department updated successfully with id ${id} and name ${updated.name}`)
+    return updated
+  }
+
+  async deleteDepartment(id: string): Promise<void> {
+    this.logger.log(`Deleting department with id ${id}`)
+    const department = await this.getDepartmentById(id)
+
+    // Check if department is assigned to any AdminRole
+    const rolesWithDepartment = await this.adminRoleRepository.find({
+      where: { departmentId: id },
+    })
+    if (rolesWithDepartment.length > 0) {
+      this.logger.warn(`Cannot delete department ${id} - it is assigned to ${rolesWithDepartment.length} role(s)`)
+      throw new NotFoundException(
+        `Cannot delete department: It is assigned to ${rolesWithDepartment.length} role(s). Please remove the department from all roles first.`,
+      )
+    }
+
+    // Check if department has any SupportAgents
+    const agents = await this.agents.findAll()
+    const agentsInDepartment = agents.filter((agent) => agent.department === department.name)
+    if (agentsInDepartment.length > 0) {
+      this.logger.warn(`Cannot delete department ${id} - it has ${agentsInDepartment.length} agent(s)`)
+      throw new NotFoundException(
+        `Cannot delete department: It has ${agentsInDepartment.length} agent(s). Please reassign or remove agents first.`,
+      )
+    }
+
+    await this.departments.delete(id)
+    this.logger.log(`Department deleted successfully with id ${id}`)
   }
 
   async getTicketStats() {

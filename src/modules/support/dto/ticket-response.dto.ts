@@ -184,6 +184,9 @@ export class SupportAgentDto {
 
   @ApiProperty()
   status: string
+
+  @ApiProperty({ required: false })
+  adminUserId?: string
 }
 
 export class DepartmentDto {

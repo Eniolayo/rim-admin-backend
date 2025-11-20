@@ -23,6 +23,7 @@ export class RolesService {
       description: role.description,
       permissions: role.permissions as any,
       userCount: role.userCount,
+      departmentId: role.departmentId ?? null,
       createdAt: role.createdAt,
       updatedAt: role.updatedAt,
     };
@@ -60,6 +61,7 @@ export class RolesService {
     role.description = dto.description;
     role.permissions = dto.permissions as any;
     role.userCount = 0;
+    role.departmentId = dto.departmentId ?? null;
     const saved = await this.roles.save(role);
     return this.toDto(saved);
   }
@@ -74,6 +76,7 @@ export class RolesService {
       name: dto.name ?? role.name,
       description: dto.description ?? role.description,
       permissions: dto.permissions ?? role.permissions,
+      departmentId: dto.departmentId !== undefined ? dto.departmentId : role.departmentId,
     });
     const updated = await this.roles.findById(id);
     if (!updated) throw new NotFoundException('Role not found');

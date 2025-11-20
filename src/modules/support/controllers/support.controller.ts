@@ -1,12 +1,15 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards, Logger } from '@nestjs/common'
+import { Body, Controller, Get, Param, Patch, Post, Delete, Query, UseGuards, Logger } from '@nestjs/common'
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger'
 import { SupportService } from '../services/support.service'
 import { SupportGateway } from '../gateways/support.gateway'
 import { TicketResponseDto, ChatMessageDto, TicketStatsDto, TicketHistoryDto, SupportAgentDto, DepartmentDto } from '../dto/ticket-response.dto'
 import { CreateTicketDto, UpdateTicketDto, AssignTicketDto, EscalateTicketDto, SendMessageDto, SendMessageBodyDto, TicketFiltersDto, BulkAssignDto, BulkResolveDto, BulkStatusDto, BulkNotifyDto, BulkEscalateDto } from '../dto/ticket.dto'
+import { CreateDepartmentDto, UpdateDepartmentDto } from '../dto/department.dto'
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard'
 import { PermissionsGuard } from '../../auth/guards/permissions.guard'
+import { TicketAccessGuard } from '../../auth/guards/ticket-access.guard'
 import { Permissions } from '../../auth/decorators/permissions.decorator'
+import { RequireAdminOnly } from '../../auth/decorators/require-admin-only.decorator'
 import { CurrentUser } from '../../auth/decorators/current-user.decorator'
 import { AdminUser } from '../../../entities/admin-user.entity'
 
@@ -53,7 +56,7 @@ export class SupportController {
   @ApiOperation({ summary: 'Get ticket by id' })
   @ApiResponse({ status: 200, type: TicketResponseDto })
   @Permissions('support', 'read')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, TicketAccessGuard)
   getTicket(@Param('id') id: string): Promise<TicketResponseDto> {
     this.logger.log(`GET /support/tickets/${id} - Getting ticket by id ${id}`)
     return this.service.getTicketById(id) as any
@@ -63,7 +66,7 @@ export class SupportController {
   @ApiOperation({ summary: 'Update ticket' })
   @ApiResponse({ status: 200, type: TicketResponseDto })
   @Permissions('support', 'write')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, TicketAccessGuard)
   updateTicket(@Param('id') id: string, @Body() dto: UpdateTicketDto, @CurrentUser() user: AdminUser): Promise<TicketResponseDto> {
     this.logger.log(`PATCH /support/tickets/${id} - Updating ticket with id ${id} by user id ${user.id} and user username ${user.username} with dto ${JSON.stringify(dto)}`)
     return this.service.updateTicket(id, dto, user) as any
@@ -73,6 +76,7 @@ export class SupportController {
   @ApiOperation({ summary: 'Assign ticket' })
   @ApiResponse({ status: 200, type: TicketResponseDto })
   @Permissions('support', 'write')
+  @RequireAdminOnly() // Only Admin and SuperAdmin can assign tickets
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   assignTicket(@Body() dto: AssignTicketDto, @CurrentUser() user: AdminUser): Promise<TicketResponseDto> {
     this.logger.log(`POST /support/tickets/assign - Assigning ticket with id ${dto.ticketId} to agent id ${dto.agentId} by user id ${user.id} and user username ${user.username}`)
@@ -93,7 +97,7 @@ export class SupportController {
   @ApiOperation({ summary: 'List messages' })
   @ApiResponse({ status: 200, type: [ChatMessageDto] })
   @Permissions('support', 'read')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, TicketAccessGuard)
   getMessages(@Param('id') id: string): Promise<ChatMessageDto[]> {
     this.logger.log(`GET /support/tickets/${id}/messages - Getting messages for ticket id ${id}`)
     return this.service.getMessages(id) as any
@@ -103,7 +107,7 @@ export class SupportController {
   @ApiOperation({ summary: 'Send message' })
   @ApiResponse({ status: 201, type: ChatMessageDto })
   @Permissions('support', 'write')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, TicketAccessGuard)
   sendMessage(@Param('id') id: string, @Body() bodyDto: SendMessageBodyDto, @CurrentUser() user: AdminUser): Promise<ChatMessageDto> {
     this.logger.log(`POST /support/tickets/${id}/messages - Sending message for ticket id ${id} by user id ${user.id} and user username ${user.username}`)
     const dto: SendMessageDto = { ...bodyDto, ticketId: id }
@@ -135,11 +139,52 @@ export class SupportController {
     return this.service.getDepartments() as any
   }
 
+  @Get('departments/:id')
+  @ApiOperation({ summary: 'Get department by id' })
+  @ApiResponse({ status: 200, type: DepartmentDto })
+  @Permissions('support', 'read')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  getDepartment(@Param('id') id: string): Promise<DepartmentDto> {
+    this.logger.log(`GET /support/departments/${id} - Getting department by id ${id}`)
+    return this.service.getDepartmentById(id) as any
+  }
+
+  @Post('departments')
+  @ApiOperation({ summary: 'Create department' })
+  @ApiResponse({ status: 201, type: DepartmentDto })
+  @Permissions('support', 'write')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  createDepartment(@Body() dto: CreateDepartmentDto): Promise<DepartmentDto> {
+    this.logger.log(`POST /support/departments - Creating department with name ${dto.name} and description ${dto.description} and tier ${dto.tier}`)
+    return this.service.createDepartment(dto) as any
+  }
+
+  @Patch('departments/:id')
+  @ApiOperation({ summary: 'Update department' })
+  @ApiResponse({ status: 200, type: DepartmentDto })
+  @Permissions('support', 'write')
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  updateDepartment(@Param('id') id: string, @Body() dto: UpdateDepartmentDto): Promise<DepartmentDto> {
+    this.logger.log(`PATCH /support/departments/${id} - Updating department with id ${id} with dto ${JSON.stringify(dto)}`)
+    return this.service.updateDepartment(id, dto) as any
+  }
+
+  @Delete('departments/:id')
+  @ApiOperation({ summary: 'Delete department' })
+  @ApiResponse({ status: 200, description: 'Department deleted successfully' })
+  @Permissions('support', 'write')
+  @RequireAdminOnly()
+  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  deleteDepartment(@Param('id') id: string): Promise<{ message: string }> {
+    this.logger.log(`DELETE /support/departments/${id} - Deleting department with id ${id}`)
+    return this.service.deleteDepartment(id).then(() => ({ message: 'Department deleted successfully' })) as any
+  }
+
   @Get('tickets/:id/history')
   @ApiOperation({ summary: 'Ticket history' })
   @ApiResponse({ status: 200, type: [TicketHistoryDto] })
   @Permissions('support', 'read')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
+  @UseGuards(JwtAuthGuard, PermissionsGuard, TicketAccessGuard)
   history(@Param('id') id: string): Promise<TicketHistoryDto[]> {
     this.logger.log(`GET /support/tickets/${id}/history - Getting ticket history for ticket id ${id}`)
     return this.service.getTicketHistory(id) as any
@@ -157,6 +202,7 @@ export class SupportController {
   @Post('tickets/bulk/assign')
   @ApiOperation({ summary: 'Bulk assign tickets' })
   @Permissions('support', 'write')
+  @RequireAdminOnly() // Only Admin and SuperAdmin can bulk assign tickets
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   bulkAssign(@Body() dto: BulkAssignDto) {
     this.logger.log(`POST /support/tickets/bulk/assign - Bulk assigning ${dto.ticketIds.length} tickets with ids ${dto.ticketIds.join(', ')} to agent id ${dto.agentId}`)

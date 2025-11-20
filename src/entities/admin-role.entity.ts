@@ -5,9 +5,12 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   OneToMany,
+  ManyToOne,
+  JoinColumn,
   Index,
 } from 'typeorm';
 import { AdminUser } from './admin-user.entity';
+import { Department } from './department.entity';
 
 export interface Permission {
   resource: string;
@@ -32,6 +35,9 @@ export class AdminRole {
   @Column({ type: 'int', default: 0 })
   userCount: number;
 
+  @Column({ type: 'uuid', nullable: true })
+  departmentId: string | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 
@@ -40,4 +46,8 @@ export class AdminRole {
 
   @OneToMany(() => AdminUser, (adminUser) => adminUser.role)
   adminUsers: AdminUser[];
+
+  @ManyToOne(() => Department, { nullable: true })
+  @JoinColumn({ name: 'departmentId' })
+  department: Department | null;
 }

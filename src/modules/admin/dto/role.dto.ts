@@ -7,6 +7,8 @@ import {
   ArrayMinSize,
   IsIn,
   ValidateNested,
+  IsOptional,
+  IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 
@@ -40,6 +42,11 @@ export class CreateRoleDto {
   @ValidateNested({ each: true })
   @Type(() => PermissionDto)
   permissions: PermissionDto[];
+
+  @ApiProperty({ required: false, nullable: true, description: 'Department ID (optional, for support agent roles)' })
+  @IsUUID()
+  @IsOptional()
+  departmentId?: string | null;
 }
 
 export class UpdateRoleDto {
@@ -56,6 +63,11 @@ export class UpdateRoleDto {
   @ValidateNested({ each: true })
   @Type(() => PermissionDto)
   permissions?: PermissionDto[];
+
+  @ApiProperty({ required: false, nullable: true, description: 'Department ID (optional, for support agent roles)' })
+  @IsUUID()
+  @IsOptional()
+  departmentId?: string | null;
 }
 
 export class RoleResponseDto {
@@ -73,6 +85,9 @@ export class RoleResponseDto {
 
   @ApiProperty()
   userCount: number;
+
+  @ApiProperty({ required: false, nullable: true })
+  departmentId?: string | null;
 
   @ApiProperty()
   createdAt: Date;
