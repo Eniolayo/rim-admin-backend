@@ -30,6 +30,7 @@ import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { RequireSuperAdmin } from '../../auth/decorators/require-super-admin.decorator';
 import { CurrentUser } from '../../auth/decorators/current-user.decorator';
 import { Public } from '../../auth/decorators/public.decorator';
+import { Permissions } from '../../auth/decorators/permissions.decorator';
 import { ActivityLogInterceptor } from '../interceptors/activity-log.interceptor';
 import { AdminUser } from '../../../entities/admin-user.entity';
 
@@ -42,7 +43,7 @@ export class InvitationsController {
   constructor(private readonly service: InvitationsService) {}
 
   @Post('invite')
-  @RequireSuperAdmin()
+  @Permissions('settings', 'delete')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()
@@ -79,7 +80,7 @@ export class InvitationsController {
   }
 
   @Get()
-  @RequireSuperAdmin()
+  @Permissions('settings', 'delete')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'List all admin invitations' })
@@ -149,7 +150,7 @@ export class InvitationsController {
   }
 
   @Post(':id/resend')
-  @RequireSuperAdmin()
+  @Permissions('settings', 'delete')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()
@@ -190,7 +191,7 @@ export class InvitationsController {
   }
 
   @Delete(':id')
-  @RequireSuperAdmin()
+  @Permissions('settings', 'delete')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()

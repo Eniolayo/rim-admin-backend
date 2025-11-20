@@ -18,6 +18,10 @@ export async function loginSeedAdmin(httpServer: any): Promise<AuthResult> {
 
   const loginBody = loginRes.body
 
+  if (loginBody.token && loginBody.refreshToken) {
+    return { token: loginBody.token, refreshToken: loginBody.refreshToken, user: loginBody.user }
+  }
+
   if (loginBody.status === 'MFA_SETUP_REQUIRED' && loginBody.sessionToken) {
     const setupRes = await request(httpServer)
       .post('/auth/2fa/setup')
@@ -31,14 +35,7 @@ export async function loginSeedAdmin(httpServer: any): Promise<AuthResult> {
       .send({ sessionToken: loginBody.sessionToken, code: authenticator.generate(manualKey) })
       .expect(200)
 
-    const { temporaryHash } = verifyRes.body
-
-    const consumeRes = await request(httpServer)
-      .post('/auth/2fa/backup-codes/consume')
-      .send({ temporaryHash, code: backupCodes[0] })
-      .expect(200)
-
-    const tokens = consumeRes.body
+    const tokens = verifyRes.body
     return { token: tokens.token, refreshToken: tokens.refreshToken, user: loginBody.user }
   }
 

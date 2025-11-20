@@ -41,54 +41,70 @@ export class TicketAccessGuard implements CanActivate {
       throw new NotFoundException('Ticket not found');
     }
 
-    // Check if user is Admin or SuperAdmin (they can access all tickets)
+    // Validate user role and permissions
     if (!user.roleEntity) {
       this.logger.warn(`User ${user.id} has no role entity loaded`);
       throw new ForbiddenException('User role not found');
     }
 
-    const roleName = user.roleEntity.name.toLowerCase().trim();
-    const isSuperAdmin = roleName === 'super_admin';
-    const isAdmin = roleName === 'admin';
+    // Check if user has support resource permissions
+    const supportPermission = user.roleEntity.permissions?.find(
+      (perm) => perm.resource === 'support',
+    );
 
-    if (isSuperAdmin || isAdmin) {
+    if (!supportPermission || !supportPermission.actions?.length) {
+      this.logger.warn(
+        `User ${user.id} (role: ${user.roleEntity.name}) attempted to access ticket ${ticketId} but lacks support resource permission`,
+      );
+      throw new ForbiddenException(
+        'Insufficient permissions: Access to support resource is required',
+      );
+    }
+
+    // Check if user has read permission for support resource
+    const hasReadPermission = supportPermission.actions.includes('read');
+    if (!hasReadPermission) {
+      this.logger.warn(
+        `User ${user.id} (role: ${user.roleEntity.name}) attempted to access ticket ${ticketId} but lacks read permission for support resource`,
+      );
+      throw new ForbiddenException(
+        'Insufficient permissions: Read permission for support resource is required',
+      );
+    }
+
+    // Determine if user has admin-level permissions (has write or delete actions)
+    // Users with write/delete permissions can access all tickets
+    const hasAdminLevelAccess =
+      supportPermission.actions.includes('write') ||
+      supportPermission.actions.includes('delete');
+
+    // If user has admin-level access (write/delete permissions), they can access all tickets
+    if (hasAdminLevelAccess) {
       this.logger.debug(
-        `Admin/SuperAdmin access granted for user ${user.id} (role: ${user.roleEntity.name}) to ticket ${ticketId}`,
+        `Admin-level access granted for user ${user.id} (role: ${user.roleEntity.name}) to ticket ${ticketId} via support permissions`,
       );
       return true;
     }
 
-    // If ticket is unassigned, only Admin/SuperAdmin can access
+    // If ticket is unassigned, only users with admin-level permissions can access
     if (!ticket.assignedTo) {
       this.logger.warn(
-        `User ${user.id} (role: ${user.roleEntity.name}) attempted to access unassigned ticket ${ticketId}. Only admins can access unassigned tickets.`,
+        `User ${user.id} (role: ${user.roleEntity.name}) attempted to access unassigned ticket ${ticketId}. Only users with admin-level support permissions can access unassigned tickets.`,
       );
       throw new ForbiddenException(
         'Insufficient permissions: Only admins can access unassigned tickets',
       );
     }
 
-    // Check if user is an agent (moderator or support agent)
-    const isModerator = roleName === 'moderator';
-    const isSupportAgent = roleName === 'support agent';
-
-    if (!isModerator && !isSupportAgent) {
-      this.logger.warn(
-        `User ${user.id} (role: ${user.roleEntity.name}) attempted to access ticket ${ticketId} but is not an agent or admin`,
-      );
-      throw new ForbiddenException(
-        'Insufficient permissions: Only agents and admins can access assigned tickets',
-      );
-    }
-
+    // For users with only read permission, they can only access tickets assigned to them
     // Find the SupportAgent that corresponds to this AdminUser by adminUserId
     const supportAgent = await this.agentRepository.findByAdminUserId(user.id);
     if (!supportAgent) {
       this.logger.warn(
-        `User ${user.id} (email: ${user.email}) is an agent but no corresponding SupportAgent found`,
+        `User ${user.id} (email: ${user.email}) attempted to access ticket ${ticketId} but no corresponding SupportAgent found. Users with read-only support permissions must be agents to access assigned tickets.`,
       );
       throw new ForbiddenException(
-        'Insufficient permissions: Agent profile not found',
+        'Insufficient permissions: Agent profile not found or ticket not assigned to you',
       );
     }
 
@@ -103,9 +119,8 @@ export class TicketAccessGuard implements CanActivate {
     }
 
     this.logger.debug(
-      `Agent access granted for user ${user.id} (agent id: ${supportAgent.id}) to ticket ${ticketId}`,
+      `Agent access granted for user ${user.id} (agent id: ${supportAgent.id}) to ticket ${ticketId} via support read permission`,
     );
     return true;
   }
 }
-
