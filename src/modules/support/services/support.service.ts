@@ -36,6 +36,7 @@ import {
 import { TicketHistory } from '../../../entities/ticket-history.entity';
 import { AdminUser } from '../../../entities/admin-user.entity';
 import { SupportAgent } from '../../../entities/support-agent.entity';
+import { EmailService } from '../../email/email.service';
 
 @Injectable()
 export class SupportService {
@@ -52,6 +53,7 @@ export class SupportService {
     private readonly adminUserRepository: Repository<AdminUser>,
     @InjectRepository(AdminRole)
     private readonly adminRoleRepository: Repository<AdminRole>,
+    private readonly emailService: EmailService,
   ) {}
 
   async getTickets(filters: TicketFiltersDto): Promise<SupportTicket[]> {
@@ -94,9 +96,34 @@ export class SupportService {
     user?: AdminUser,
   ): Promise<SupportTicket> {
     this.logger.log(
-      `Creating ticket for customer id ${dto.customerId ?? 'null'} and customer name ${dto.customerName ?? 'null'} and customer email ${dto.customerEmail ?? 'null'} and customer phone ${dto.customerPhone ?? 'null'} with subject ${dto.subject} and category ${dto.category} and priority ${dto.priority} by user id ${user?.id ?? 'null'} and user username ${user?.username ?? 'null'}`,
+      `Creating ticket for customer id ${dto.customerId ?? 'null'} and customer name ${dto.customerName ?? 'null'} and customer email ${dto.customerEmail ?? 'null'} and customer phone ${dto.customerPhone ?? 'null'} with subject ${dto.subject} and category ${dto.category} and priority ${dto.priority}${dto.assignedTo ? ` assigned to ${dto.assignedTo}` : ''} by user id ${user?.id ?? 'null'} and user username ${user?.username ?? 'null'}`,
     );
     const number = await this.tickets.generateTicketNumber();
+
+    // Determine assignment details if assignedTo is provided
+    let assignedToName: string | null = null;
+    let initialStatus = TicketStatus.OPEN;
+
+    if (dto.assignedTo) {
+      // Try to find as agent first
+      const agent = await this.agents.findById(dto.assignedTo);
+      if (agent) {
+        assignedToName = agent.name;
+        agent.activeTickets = (agent.activeTickets || 0) + 1;
+        await this.agents.save(agent);
+        initialStatus = TicketStatus.IN_PROGRESS;
+      } else {
+        // Try to find as admin
+        const admin = await this.adminUserRepository.findOne({
+          where: { id: dto.assignedTo },
+        });
+        if (admin) {
+          assignedToName = admin.username;
+          initialStatus = TicketStatus.IN_PROGRESS;
+        }
+      }
+    }
+
     const ticket: SupportTicket = Object.assign(new SupportTicket(), {
       ticketNumber: number,
       customerId: dto.customerId ?? null,
@@ -107,10 +134,12 @@ export class SupportService {
       description: dto.description,
       category: dto.category,
       priority: dto.priority,
-      status: TicketStatus.OPEN,
+      status: initialStatus,
       messageCount: 0,
       tags: dto.tags ?? null,
       department: dto.department ?? null,
+      assignedTo: dto.assignedTo ?? null,
+      assignedToName: assignedToName,
     });
     const saved = await this.tickets.save(ticket);
     const performedBy = user?.id ?? (await this.getSystemAdminId());
@@ -123,8 +152,32 @@ export class SupportService {
         performedByName,
       }),
     );
+
+    // If ticket was assigned during creation, add assignment history and send email
+    if (dto.assignedTo && assignedToName) {
+      await this.history.save(
+        Object.assign(new TicketHistory(), {
+          ticketId: saved.id,
+          action: 'ticket_assigned',
+          performedBy,
+          performedByName,
+          details: `Assigned to ${assignedToName}`,
+        }),
+      );
+
+      // Send assignment notification email
+      try {
+        await this.sendAssignmentNotificationEmail(saved, dto.assignedTo);
+      } catch (error) {
+        this.logger.error(
+          `Failed to send assignment notification email for ticket ${saved.id}: ${error.message}`,
+        );
+        // Don't fail ticket creation if email fails
+      }
+    }
+
     this.logger.log(
-      `Ticket created successfully with id ${saved.id} and ticket number ${saved.ticketNumber} for customer id ${saved.customerId ?? 'null'} and customer name ${saved.customerName ?? 'null'} and customer email ${saved.customerEmail ?? 'null'} and customer phone ${saved.customerPhone ?? 'null'}`,
+      `Ticket created successfully with id ${saved.id} and ticket number ${saved.ticketNumber} for customer id ${saved.customerId ?? 'null'} and customer name ${saved.customerName ?? 'null'} and customer email ${saved.customerEmail ?? 'null'} and customer phone ${saved.customerPhone ?? 'null'}${saved.assignedTo ? ` assigned to ${saved.assignedToName}` : ''}`,
     );
     return saved;
   }
@@ -219,21 +272,34 @@ export class SupportService {
     user?: AdminUser,
   ): Promise<SupportTicket> {
     this.logger.log(
-      `Assigning ticket with id ${dto.ticketId} to agent id ${dto.agentId} by user id ${user?.id ?? 'null'} and user username ${user?.username ?? 'null'}`,
+      `Assigning ticket with id ${dto.ticketId} to agent/admin id ${dto.agentId} by user id ${user?.id ?? 'null'} and user username ${user?.username ?? 'null'}`,
     );
     const t = await this.getTicketById(dto.ticketId);
+
+    // Try to find as agent first
+    let assignedToName: string | null = null;
     const agent = await this.agents.findById(dto.agentId);
+    if (agent) {
+      assignedToName = agent.name;
+      agent.activeTickets = (agent.activeTickets || 0) + 1;
+      await this.agents.save(agent);
+    } else {
+      // Try to find as admin
+      const admin = await this.adminUserRepository.findOne({
+        where: { id: dto.agentId },
+      });
+      if (admin) {
+        assignedToName = admin.username;
+      }
+    }
+
     const patch: Partial<SupportTicket> = {
       assignedTo: dto.agentId,
-      assignedToName: agent?.name ?? null,
+      assignedToName: assignedToName,
       status:
         t.status === TicketStatus.OPEN ? TicketStatus.IN_PROGRESS : t.status,
     };
     await this.tickets.update(t.id, patch);
-    if (agent) {
-      agent.activeTickets = (agent.activeTickets || 0) + 1;
-      await this.agents.save(agent);
-    }
     const updated = await this.getTicketById(t.id);
     const performedBy = user?.id ?? (await this.getSystemAdminId());
     await this.history.save(
@@ -245,8 +311,19 @@ export class SupportService {
         details: `Assigned to ${updated.assignedToName}`,
       }),
     );
+
+    // Send assignment notification email
+    try {
+      await this.sendAssignmentNotificationEmail(updated, dto.agentId);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send assignment notification email for ticket ${updated.id}: ${error.message}`,
+      );
+      // Don't fail assignment if email fails
+    }
+
     this.logger.log(
-      `Ticket assigned successfully with ticket id ${updated.id} and ticket number ${updated.ticketNumber} to agent id ${dto.agentId} and agent name ${updated.assignedToName}`,
+      `Ticket assigned successfully with ticket id ${updated.id} and ticket number ${updated.ticketNumber} to agent/admin id ${dto.agentId} and name ${updated.assignedToName}`,
     );
     return updated;
   }
@@ -530,6 +607,122 @@ export class SupportService {
   async sendNotification(ticketId: string, type: 'email' | 'sms') {
     this.logger.log(`Sending ${type} notification for ticket id ${ticketId}`);
     return true;
+  }
+
+  private async sendAssignmentNotificationEmail(
+    ticket: SupportTicket,
+    assignedToId: string,
+  ): Promise<void> {
+    if (!ticket.assignedToName) {
+      this.logger.warn(
+        `Cannot send assignment email: ticket ${ticket.id} has no assignedToName`,
+      );
+      return;
+    }
+
+    // Try to find as agent first
+    const agent = await this.agents.findById(assignedToId);
+    let recipientEmail: string | null = null;
+    let recipientName: string = ticket.assignedToName;
+
+    if (agent) {
+      recipientEmail = agent.email;
+    } else {
+      // Try to find as admin
+      const admin = await this.adminUserRepository.findOne({
+        where: { id: assignedToId },
+      });
+      if (admin) {
+        recipientEmail = admin.email;
+      }
+    }
+
+    if (!recipientEmail) {
+      this.logger.warn(
+        `Cannot send assignment email: no email found for assigned user/agent ${assignedToId}`,
+      );
+      return;
+    }
+
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const ticketUrl = `${frontendUrl}/support/tickets/${ticket.id}`;
+    const priorityColors: Record<string, string> = {
+      low: '#95a5a6',
+      medium: '#3498db',
+      high: '#f39c12',
+      urgent: '#e74c3c',
+    };
+    const priorityColor = priorityColors[ticket.priority] || '#95a5a6';
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          <title>Ticket Assignment - RIM</title>
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <div style="background-color: #f4f4f4; padding: 20px; border-radius: 5px;">
+            <h2 style="color: #2c3e50; margin-top: 0;">New Ticket Assignment</h2>
+            <p>Hello ${recipientName},</p>
+            <p>You have been assigned a new support ticket:</p>
+            <div style="background-color: white; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid ${priorityColor};">
+              <h3 style="margin-top: 0; color: #2c3e50;">${ticket.subject}</h3>
+              <p style="margin: 10px 0;"><strong>Ticket Number:</strong> ${ticket.ticketNumber}</p>
+              <p style="margin: 10px 0;"><strong>Priority:</strong> <span style="color: ${priorityColor}; font-weight: bold; text-transform: capitalize;">${ticket.priority}</span></p>
+              <p style="margin: 10px 0;"><strong>Category:</strong> <span style="text-transform: capitalize;">${ticket.category}</span></p>
+              ${ticket.customerName ? `<p style="margin: 10px 0;"><strong>Customer:</strong> ${ticket.customerName}</p>` : ''}
+              ${ticket.customerEmail ? `<p style="margin: 10px 0;"><strong>Customer Email:</strong> ${ticket.customerEmail}</p>` : ''}
+            </div>
+            <p style="text-align: center; margin: 30px 0;">
+              <a href="${ticketUrl}" 
+                 style="background-color: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;">
+                View Ticket
+              </a>
+            </p>
+            <p style="font-size: 14px; color: #666;">
+              Or copy and paste this link into your browser:<br>
+              <a href="${ticketUrl}" style="color: #3498db; word-break: break-all;">${ticketUrl}</a>
+            </p>
+            <hr style="border: none; border-top: 1px solid #eee; margin: 30px 0;">
+            <p style="font-size: 12px; color: #999; text-align: center;">
+              This is an automated message from RIM Admin Portal. Please do not reply to this email.
+            </p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const text = `
+New Ticket Assignment
+
+Hello ${recipientName},
+
+You have been assigned a new support ticket:
+
+Ticket Number: ${ticket.ticketNumber}
+Subject: ${ticket.subject}
+Priority: ${ticket.priority}
+Category: ${ticket.category}
+${ticket.customerName ? `Customer: ${ticket.customerName}` : ''}
+${ticket.customerEmail ? `Customer Email: ${ticket.customerEmail}` : ''}
+
+View the ticket at: ${ticketUrl}
+
+This is an automated message from RIM Admin Portal. Please do not reply to this email.
+    `;
+
+    await this.emailService.sendEmail({
+      to: recipientEmail,
+      subject: `New Ticket Assignment: ${ticket.ticketNumber} - ${ticket.subject}`,
+      html,
+      text,
+    });
+
+    this.logger.log(
+      `Assignment notification email sent to ${recipientEmail} for ticket ${ticket.ticketNumber}`,
+    );
   }
 
   async bulkAssign(dto: BulkAssignDto) {

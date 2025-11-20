@@ -1,239 +1,284 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger'
-import { IsString, IsOptional, IsEnum, IsNotEmpty, IsArray, IsUUID, IsDateString, IsNumber, Min } from 'class-validator'
-import { TicketCategory, TicketPriority, TicketStatus } from '../../../entities/support-ticket.entity'
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsString,
+  IsOptional,
+  IsEnum,
+  IsNotEmpty,
+  IsArray,
+  IsUUID,
+  IsDateString,
+  IsNumber,
+  Min,
+} from 'class-validator';
+import {
+  TicketCategory,
+  TicketPriority,
+  TicketStatus,
+} from '../../../entities/support-ticket.entity';
 
 export class CreateTicketDto {
   @ApiPropertyOptional({ description: 'Customer ID (UUID)' })
   @IsOptional()
   @IsUUID()
-  customerId?: string
+  customerId?: string;
 
   @ApiPropertyOptional({ description: 'Customer full name' })
   @IsOptional()
   @IsString()
-  customerName?: string
+  customerName?: string;
 
   @ApiPropertyOptional({ description: 'Customer phone number' })
   @IsOptional()
   @IsString()
-  customerPhone?: string
+  customerPhone?: string;
 
   @ApiPropertyOptional({ description: 'Customer email address' })
   @IsOptional()
   @IsString()
-  customerEmail?: string
+  customerEmail?: string;
 
   @ApiProperty({ description: 'Ticket subject' })
   @IsString()
   @IsNotEmpty()
-  subject: string
+  subject: string;
 
   @ApiProperty({ description: 'Ticket description' })
   @IsString()
   @IsNotEmpty()
-  description: string
+  description: string;
 
   @ApiProperty({ enum: TicketCategory, description: 'Ticket category' })
   @IsEnum(TicketCategory)
   @IsNotEmpty()
-  category: TicketCategory
+  category: TicketCategory;
 
   @ApiProperty({ enum: TicketPriority, description: 'Ticket priority' })
   @IsEnum(TicketPriority)
   @IsNotEmpty()
-  priority: TicketPriority
+  priority: TicketPriority;
 
-  @ApiPropertyOptional({ type: [String], description: 'Optional tags for categorization' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Optional tags for categorization',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  tags?: string[]
+  tags?: string[];
 
   @ApiPropertyOptional({ description: 'Department to assign ticket to' })
   @IsOptional()
   @IsString()
-  department?: string
+  department?: string;
+
+  @ApiPropertyOptional({
+    description: 'Agent or Admin ID to assign ticket to (UUID)',
+  })
+  @IsOptional()
+  @IsUUID()
+  assignedTo?: string;
 }
 
 export class UpdateTicketDto {
   @ApiPropertyOptional({ enum: TicketStatus, description: 'Ticket status' })
   @IsOptional()
   @IsEnum(TicketStatus)
-  status?: TicketStatus
+  status?: TicketStatus;
 
   @ApiPropertyOptional({ enum: TicketPriority, description: 'Ticket priority' })
   @IsOptional()
   @IsEnum(TicketPriority)
-  priority?: TicketPriority
+  priority?: TicketPriority;
 
   @ApiPropertyOptional({ description: 'Agent ID to assign ticket to (UUID)' })
   @IsOptional()
   @IsUUID()
-  assignedTo?: string
+  assignedTo?: string;
 
   @ApiPropertyOptional({ description: 'Department name' })
   @IsOptional()
   @IsString()
-  department?: string
+  department?: string;
 
   @ApiPropertyOptional({ description: 'Agent ID to escalate ticket to (UUID)' })
   @IsOptional()
   @IsUUID()
-  escalatedTo?: string
+  escalatedTo?: string;
 
   @ApiPropertyOptional({ description: 'Resolution text' })
   @IsOptional()
   @IsString()
-  resolution?: string
+  resolution?: string;
 
   @ApiPropertyOptional({ description: 'Customer ID (UUID)' })
   @IsOptional()
   @IsUUID()
-  customerId?: string
+  customerId?: string;
 
   @ApiPropertyOptional({ description: 'Customer full name' })
   @IsOptional()
   @IsString()
-  customerName?: string
+  customerName?: string;
 
   @ApiPropertyOptional({ description: 'Customer phone number' })
   @IsOptional()
   @IsString()
-  customerPhone?: string
+  customerPhone?: string;
 
   @ApiPropertyOptional({ description: 'Customer email address' })
   @IsOptional()
   @IsString()
-  customerEmail?: string
+  customerEmail?: string;
 
   @ApiPropertyOptional({ description: 'Ticket subject' })
   @IsOptional()
   @IsString()
-  subject?: string
+  subject?: string;
 
   @ApiPropertyOptional({ description: 'Ticket description' })
   @IsOptional()
   @IsString()
-  description?: string
+  description?: string;
 
   @ApiPropertyOptional({ enum: TicketCategory, description: 'Ticket category' })
   @IsOptional()
   @IsEnum(TicketCategory)
-  category?: TicketCategory
+  category?: TicketCategory;
 
-  @ApiPropertyOptional({ type: [String], description: 'Optional tags for categorization' })
+  @ApiPropertyOptional({
+    type: [String],
+    description: 'Optional tags for categorization',
+  })
   @IsOptional()
   @IsArray()
   @IsString({ each: true })
-  tags?: string[]
+  tags?: string[];
 }
 
 export class AssignTicketDto {
   @ApiProperty({ description: 'Ticket ID (UUID)' })
   @IsUUID()
   @IsNotEmpty()
-  ticketId: string
+  ticketId: string;
 
   @ApiProperty({ description: 'Agent ID to assign ticket to (UUID)' })
   @IsUUID()
   @IsNotEmpty()
-  agentId: string
+  agentId: string;
 }
 
 export class EscalateTicketDto {
   @ApiProperty({ description: 'Ticket ID (UUID)' })
   @IsUUID()
   @IsNotEmpty()
-  ticketId: string
+  ticketId: string;
 
   @ApiPropertyOptional({ description: 'Admin ID to escalate ticket to (UUID)' })
   @IsOptional()
   @IsUUID()
-  adminId?: string
+  adminId?: string;
 
   @ApiPropertyOptional({ description: 'Agent ID to escalate ticket to (UUID)' })
   @IsOptional()
   @IsUUID()
-  agentId?: string
+  agentId?: string;
 
   @ApiProperty({ description: 'Reason for escalation' })
   @IsString()
   @IsNotEmpty()
-  reason: string
+  reason: string;
 }
 
 export class SendMessageBodyDto {
   @ApiProperty({ description: 'Message content' })
   @IsString()
   @IsNotEmpty()
-  message: string
+  message: string;
 }
 
 export class SendMessageDto {
   @ApiProperty({ description: 'Ticket ID (UUID)' })
   @IsUUID()
   @IsNotEmpty()
-  ticketId: string
+  ticketId: string;
 
   @ApiProperty({ description: 'Message content' })
   @IsString()
   @IsNotEmpty()
-  message: string
+  message: string;
 }
 
 export class TicketFiltersDto {
-  @ApiPropertyOptional({ type: [String], enum: TicketStatus, description: 'Filter by ticket status(es)' })
+  @ApiPropertyOptional({
+    type: [String],
+    enum: TicketStatus,
+    description: 'Filter by ticket status(es)',
+  })
   @IsOptional()
   @IsArray()
   @IsEnum(TicketStatus, { each: true })
-  status?: TicketStatus[]
+  status?: TicketStatus[];
 
-  @ApiPropertyOptional({ type: [String], enum: TicketPriority, description: 'Filter by ticket priority(ies)' })
+  @ApiPropertyOptional({
+    type: [String],
+    enum: TicketPriority,
+    description: 'Filter by ticket priority(ies)',
+  })
   @IsOptional()
   @IsArray()
   @IsEnum(TicketPriority, { each: true })
-  priority?: TicketPriority[]
+  priority?: TicketPriority[];
 
-  @ApiPropertyOptional({ type: [String], enum: TicketCategory, description: 'Filter by ticket category(ies)' })
+  @ApiPropertyOptional({
+    type: [String],
+    enum: TicketCategory,
+    description: 'Filter by ticket category(ies)',
+  })
   @IsOptional()
   @IsArray()
   @IsEnum(TicketCategory, { each: true })
-  category?: TicketCategory[]
+  category?: TicketCategory[];
 
   @ApiPropertyOptional({ description: 'Filter by assigned agent ID (UUID)' })
   @IsOptional()
   @IsUUID()
-  assignedTo?: string
+  assignedTo?: string;
 
   @ApiPropertyOptional({ description: 'Filter by department name' })
   @IsOptional()
   @IsString()
-  department?: string
+  department?: string;
 
-  @ApiPropertyOptional({ description: 'Search in ticket number, subject, customer name, or email' })
+  @ApiPropertyOptional({
+    description: 'Search in ticket number, subject, customer name, or email',
+  })
   @IsOptional()
   @IsString()
-  search?: string
+  search?: string;
 
-  @ApiPropertyOptional({ description: 'Filter tickets created from this date (ISO date string)' })
+  @ApiPropertyOptional({
+    description: 'Filter tickets created from this date (ISO date string)',
+  })
   @IsOptional()
   @IsDateString()
-  dateFrom?: string
+  dateFrom?: string;
 
-  @ApiPropertyOptional({ description: 'Filter tickets created until this date (ISO date string)' })
+  @ApiPropertyOptional({
+    description: 'Filter tickets created until this date (ISO date string)',
+  })
   @IsOptional()
   @IsDateString()
-  dateTo?: string
+  dateTo?: string;
 
   @ApiPropertyOptional({ description: 'Filter by customer ID (UUID)' })
   @IsOptional()
   @IsUUID()
-  customerId?: string
+  customerId?: string;
 
   @ApiPropertyOptional({ description: 'Filter by escalated agent ID (UUID)' })
   @IsOptional()
   @IsUUID()
-  escalatedTo?: string
+  escalatedTo?: string;
 }
 
 export class BulkStatusDto {
@@ -241,12 +286,15 @@ export class BulkStatusDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   @IsNotEmpty()
-  ticketIds: string[]
+  ticketIds: string[];
 
-  @ApiProperty({ enum: TicketStatus, description: 'Status to set for all tickets' })
+  @ApiProperty({
+    enum: TicketStatus,
+    description: 'Status to set for all tickets',
+  })
   @IsEnum(TicketStatus)
   @IsNotEmpty()
-  status: TicketStatus
+  status: TicketStatus;
 }
 
 export class BulkAssignDto {
@@ -254,12 +302,12 @@ export class BulkAssignDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   @IsNotEmpty()
-  ticketIds: string[]
+  ticketIds: string[];
 
   @ApiProperty({ description: 'Agent ID to assign tickets to (UUID)' })
   @IsUUID()
   @IsNotEmpty()
-  agentId: string
+  agentId: string;
 }
 
 export class BulkResolveDto {
@@ -267,12 +315,12 @@ export class BulkResolveDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   @IsNotEmpty()
-  ticketIds: string[]
+  ticketIds: string[];
 
   @ApiPropertyOptional({ description: 'Resolution text for all tickets' })
   @IsOptional()
   @IsString()
-  resolution?: string
+  resolution?: string;
 }
 
 export class BulkNotifyDto {
@@ -280,12 +328,12 @@ export class BulkNotifyDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   @IsNotEmpty()
-  ticketIds: string[]
+  ticketIds: string[];
 
   @ApiProperty({ enum: ['email', 'sms'], description: 'Notification type' })
   @IsEnum(['email', 'sms'])
   @IsNotEmpty()
-  type: 'email' | 'sms'
+  type: 'email' | 'sms';
 }
 
 export class BulkEscalateDto {
@@ -293,20 +341,24 @@ export class BulkEscalateDto {
   @IsArray()
   @IsUUID(undefined, { each: true })
   @IsNotEmpty()
-  ticketIds: string[]
+  ticketIds: string[];
 
-  @ApiPropertyOptional({ description: 'Admin ID to escalate tickets to (UUID)' })
+  @ApiPropertyOptional({
+    description: 'Admin ID to escalate tickets to (UUID)',
+  })
   @IsOptional()
   @IsUUID()
-  adminId?: string
+  adminId?: string;
 
-  @ApiPropertyOptional({ description: 'Agent ID to escalate tickets to (UUID)' })
+  @ApiPropertyOptional({
+    description: 'Agent ID to escalate tickets to (UUID)',
+  })
   @IsOptional()
   @IsUUID()
-  agentId?: string
+  agentId?: string;
 
   @ApiProperty({ description: 'Reason for escalation' })
   @IsString()
   @IsNotEmpty()
-  reason: string
+  reason: string;
 }
