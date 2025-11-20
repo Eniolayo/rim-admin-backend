@@ -16,7 +16,13 @@ import jwtConfig from '../../../config/jwt.config';
 import { AdminUserRepository } from '../repositories/admin-user.repository';
 import { PendingLoginRepository } from '../repositories/pending-login.repository';
 import { BackupCodeRepository } from '../repositories/backup-code.repository';
-import { LoginDto, LoginResultDto, UserResponseDto } from '../dto';
+import {
+  LoginDto,
+  LoginResultDto,
+  UserResponseDto,
+  AdminProfileResponseDto,
+  UpdateAdminProfileDto,
+} from '../dto';
 import {
   AdminUser,
   AdminUserStatus,
@@ -390,5 +396,105 @@ export class AuthService {
       }
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  async getProfile(userId: string): Promise<AdminProfileResponseDto> {
+    this.logger.debug(`Getting profile for user: ${userId}`);
+    const user = await this.adminUserRepository.findById(userId);
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const roleName = user.role || user.roleEntity?.name || '';
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: formatRoleName(roleName),
+      roleId: user.roleId,
+      status: user.status,
+      lastLogin: user.lastLogin ?? null,
+      twoFactorEnabled: user.twoFactorEnabled,
+      createdAt: user.createdAt,
+      createdBy: user.createdBy ?? null,
+    };
+  }
+
+  async updateProfile(
+    userId: string,
+    updateDto: UpdateAdminProfileDto,
+  ): Promise<AdminProfileResponseDto> {
+    this.logger.log(`Updating profile for user: ${userId}`);
+
+    const user = await this.adminUserRepository.findById(userId);
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Validate password change if new password is provided
+    if (updateDto.newPassword) {
+      if (!updateDto.currentPassword) {
+        throw new BadRequestException(
+          'Current password is required to change password',
+        );
+      }
+
+      const isCurrentPasswordValid = await bcrypt.compare(
+        updateDto.currentPassword,
+        user.password,
+      );
+
+      if (!isCurrentPasswordValid) {
+        throw new BadRequestException('Current password is incorrect');
+      }
+
+      // Hash and update new password
+      user.password = await this.hashPassword(updateDto.newPassword);
+    }
+
+    // Update username if provided
+    if (
+      updateDto.username !== undefined &&
+      updateDto.username !== user.username
+    ) {
+      // Check if username is already taken
+      const existingUser = await this.adminUserRepository.findByUsername(
+        updateDto.username,
+      );
+      if (existingUser && existingUser.id !== userId) {
+        throw new BadRequestException('Username is already taken');
+      }
+      user.username = updateDto.username;
+    }
+
+    // Update email if provided
+    if (updateDto.email !== undefined && updateDto.email !== user.email) {
+      // Check if email is already taken
+      const existingUser = await this.adminUserRepository.findByEmail(
+        updateDto.email,
+      );
+      if (existingUser && existingUser.id !== userId) {
+        throw new BadRequestException('Email is already taken');
+      }
+      user.email = updateDto.email;
+    }
+
+    const updatedUser = await this.adminUserRepository.save(user);
+
+    // Return updated profile directly (no need for another DB call)
+    const roleName = updatedUser.role || updatedUser.roleEntity?.name || '';
+    return {
+      id: updatedUser.id,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      role: formatRoleName(roleName),
+      roleId: updatedUser.roleId,
+      status: updatedUser.status,
+      lastLogin: updatedUser.lastLogin ?? null,
+      twoFactorEnabled: updatedUser.twoFactorEnabled,
+      createdAt: updatedUser.createdAt,
+      createdBy: updatedUser.createdBy ?? null,
+    };
   }
 }

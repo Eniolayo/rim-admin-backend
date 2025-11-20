@@ -45,7 +45,6 @@ export class InvitationsController {
   @Post('invite')
   @Permissions('settings', 'delete')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Invite a new admin' })
   @ApiResponse({
@@ -152,7 +151,6 @@ export class InvitationsController {
   @Post(':id/resend')
   @Permissions('settings', 'delete')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Resend an invitation' })
   @ApiParam({
@@ -193,7 +191,6 @@ export class InvitationsController {
   @Delete(':id')
   @Permissions('settings', 'delete')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @UseInterceptors(ActivityLogInterceptor)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Cancel an invitation' })
   @ApiParam({

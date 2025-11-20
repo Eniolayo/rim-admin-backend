@@ -6,6 +6,7 @@ import {
   HttpStatus,
   UseGuards,
   Get,
+  Patch,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -27,12 +28,15 @@ import {
   SetupStartResponseDto,
   TokenResponseDto,
   RefreshTokenDto,
+  AdminProfileResponseDto,
+  UpdateAdminProfileDto,
 } from '../dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
 import { Public } from '../decorators/public.decorator';
 import { AdminUser } from '../../../entities/admin-user.entity';
 import { UserResponseDto } from '../dto/login-response.dto';
+import { formatRoleName } from '../../../common/utils/role.utils';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -142,5 +146,57 @@ export class AuthController {
       name: user.username,
       role: user.role || user.roleEntity?.name || '',
     };
+  }
+
+  @Get('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get current admin profile with full details' })
+  @ApiResponse({
+    status: 200,
+    description: 'Admin profile information',
+    type: AdminProfileResponseDto,
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  getProfile(@CurrentUser() user: AdminUser): AdminProfileResponseDto {
+    // User is already loaded from JWT token via JwtStrategy.validate()
+    // No need for additional database call
+    const roleName = user.role || user.roleEntity?.name || '';
+    return {
+      id: user.id,
+      username: user.username,
+      email: user.email,
+      role: formatRoleName(roleName),
+      roleId: user.roleId,
+      status: user.status,
+      lastLogin: user.lastLogin ?? null,
+      twoFactorEnabled: user.twoFactorEnabled,
+      createdAt: user.createdAt,
+      createdBy: user.createdBy ?? null,
+    };
+  }
+
+  @Patch('profile')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Update current admin profile' })
+  @ApiBody({ type: UpdateAdminProfileDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile updated successfully',
+    type: AdminProfileResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - validation error or duplicate username/email',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 404, description: 'User not found' })
+  async updateProfile(
+    @CurrentUser() user: AdminUser,
+    @Body() updateDto: UpdateAdminProfileDto,
+  ): Promise<AdminProfileResponseDto> {
+    return this.authService.updateProfile(user.id, updateDto);
   }
 }
