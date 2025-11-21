@@ -100,7 +100,7 @@ export class EmailService {
     expiresAt: Date,
   ): Promise<void> {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const invitationLink = `${frontendUrl}/admin/invitation/${inviteToken}`;
+    const invitationLink = `${frontendUrl}/admin/setup/${inviteToken}`;
     const expirationDate = expiresAt.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -166,6 +166,83 @@ This is an automated message from RIM Admin Portal. Please do not reply to this 
     await this.sendEmail({
       to: email,
       subject: 'Admin Invitation - RIM',
+      html,
+      text,
+    });
+  }
+
+  async sendPasswordResetEmail(
+    email: string,
+    resetToken: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const resetLink = `${frontendUrl}/reset-password/${resetToken}`;
+    const expirationDate = expiresAt.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset=\"utf-8\">
+          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
+          <title>Password Reset - RIM</title>
+        </head>
+        <body style=\"font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;\">
+          <div style=\"background-color: #f4f4f4; padding: 20px; border-radius: 5px;\">
+            <h2 style=\"color: #2c3e50; margin-top: 0;\">Password Reset</h2>
+            <p>Hello,</p>
+            <p>We received a request to reset the password for your RIM Admin account.</p>
+            <p>To proceed, click the button below to set a new password:</p>
+            <p style=\"text-align: center; margin: 30px 0;\">
+              <a href=\"${resetLink}\"
+                 style=\"background-color: #3498db; color: white; padding: 12px 30px; text-decoration: none; border-radius: 5px; display: inline-block;\">
+                Reset Password
+              </a>
+            </p>
+            <p style=\"font-size: 14px; color: #666;\">
+              Or copy and paste this link into your browser:<br>
+              <a href=\"${resetLink}\" style=\"color: #3498db; word-break: break-all;\">${resetLink}</a>
+            </p>
+            <p style=\"font-size: 14px; color: #e74c3c; margin-top: 30px;\">
+              <strong>Important:</strong> This password reset link will expire on ${expirationDate}.
+            </p>
+            <p style=\"font-size: 14px; color: #666; margin-top: 30px;\">
+              If you did not request a password reset, you can safely ignore this email.
+            </p>
+            <hr style=\"border: none; border-top: 1px solid #eee; margin: 30px 0;\">
+            <p style=\"font-size: 12px; color: #999; text-align: center;\">
+              This is an automated message from RIM Admin Portal. Please do not reply to this email.
+            </p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const text = `
+Password Reset
+
+Hello,
+
+We received a request to reset the password for your RIM Admin account.
+
+To proceed, visit:
+${resetLink}
+
+Important: This password reset link will expire on ${expirationDate}.
+
+If you did not request a password reset, you can safely ignore this email.
+
+This is an automated message from RIM Admin Portal. Please do not reply to this email.
+    `;
+
+    await this.sendEmail({
+      to: email,
+      subject: 'Password Reset - RIM',
       html,
       text,
     });

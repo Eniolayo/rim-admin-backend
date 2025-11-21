@@ -170,7 +170,7 @@ export class InvitationsService {
         await this.emailService.sendAdminInvitationEmail(
           saved.email,
           saved.inviteToken,
-          role.name,
+          formatRoleName(role.name),
           saved.invitedByName,
           saved.expiresAt,
         );
@@ -555,7 +555,7 @@ export class InvitationsService {
             await this.emailService.sendAdminInvitationEmail(
               updated.email,
               updated.inviteToken,
-              roleName || 'Admin',
+              formatRoleName(roleName || 'Admin'),
               updated.invitedByName,
               updated.expiresAt,
             );

@@ -13,11 +13,13 @@ import { PendingLoginRepository } from './repositories/pending-login.repository'
 import { BackupCodeRepository } from './repositories/backup-code.repository';
 import { AdminController } from './controllers/admin.controller';
 import { PermissionsGuard } from './guards/permissions.guard';
+import { EmailModule } from '../email/email.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([AdminUser, AdminRole, PendingLogin, BackupCode]),
     PassportModule,
+    EmailModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [jwtConfig.KEY],
