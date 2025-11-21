@@ -9,7 +9,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import type { ConfigType } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import { authenticator } from 'otplib';
 import * as QRCode from 'qrcode';
 import jwtConfig from '../../../config/jwt.config';
@@ -30,6 +30,8 @@ import {
 import { formatRoleName } from '../../../common/utils/role.utils';
 import { PendingLogin } from '../../../entities/pending-login.entity';
 import { BackupCode } from '../../../entities/backup-code.entity';
+import { EmailService } from '../../email/email.service';
+import { ForgotPasswordRequestDto, VerifyResetTokenResponseDto, ResetPasswordDto } from '../dto';
 
 @Injectable()
 export class AuthService {
@@ -40,6 +42,7 @@ export class AuthService {
     private readonly pendingLoginRepository: PendingLoginRepository,
     private readonly backupCodeRepository: BackupCodeRepository,
     private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
     @Inject(jwtConfig.KEY)
     private readonly jwtConfiguration: ConfigType<typeof jwtConfig>,
   ) {}
@@ -396,6 +399,131 @@ export class AuthService {
       }
       throw new UnauthorizedException('Invalid refresh token');
     }
+  }
+
+  async requestPasswordReset(
+    dto: ForgotPasswordRequestDto,
+    ipAddress?: string,
+  ): Promise<{ ok: true }> {
+    // Always return success to prevent user enumeration
+    const user = await this.adminUserRepository.findByEmail(dto.email);
+    if (!user || user.status !== AdminUserStatus.ACTIVE) {
+      // Log attempt even if user not found (for security monitoring)
+      this.logger.warn(
+        `Password reset request failed: email=${dto.email}, reason=user_not_found_or_inactive, ip=${ipAddress || 'unknown'}`,
+      );
+      return { ok: true };
+    }
+
+    // Validate 2FA code if 2FA is enabled
+    if (user.twoFactorEnabled) {
+      if (!user.otpSecret) {
+        this.logger.warn(
+          `Password reset request failed: email=${dto.email}, reason=no_otp_secret, ip=${ipAddress || 'unknown'}`,
+        );
+        return { ok: true };
+      }
+      
+      // Validate TOTP code - checkDelta allows window tolerance for clock drift
+      // Returns null if invalid, or a delta (time step difference) if valid
+      const delta = authenticator.checkDelta(dto.code, user.otpSecret);
+      const valid = delta !== null;
+      
+      if (!valid) {
+        // Log failed 2FA attempt
+        this.logger.warn(
+          `Password reset request failed: email=${dto.email}, reason=invalid_2fa_code, ip=${ipAddress || 'unknown'}`,
+        );
+        return { ok: true };
+      }
+    }
+
+    // Generate reset token
+    const token = this.generateHash(32);
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    const ttlMinutes = 60;
+    const expiresAt = new Date(Date.now() + ttlMinutes * 60 * 1000);
+    await this.adminUserRepository.setPasswordResetToken(
+      user.id,
+      tokenHash,
+      expiresAt,
+    );
+
+    // Send reset email
+    try {
+      await this.emailService.sendPasswordResetEmail(
+        user.email,
+        token,
+        expiresAt,
+      );
+      // Log successful request (for audit trail)
+      this.logger.log(
+        `Password reset request successful: email=${user.email}, adminId=${user.id}, ip=${ipAddress || 'unknown'}`,
+      );
+    } catch (e) {
+      // Do not leak email failures; still return success
+      this.logger.error(
+        `Failed to send password reset email: ${e?.message ?? e}`,
+      );
+    }
+    return { ok: true };
+  }
+
+  async verifyResetToken(token: string): Promise<VerifyResetTokenResponseDto> {
+    const hash = createHash('sha256').update(token).digest('hex');
+    // Database query by hash is already effectively constant-time
+    // since we're using an indexed hash column
+    const user = await this.adminUserRepository.findByResetTokenHash(hash);
+    if (!user) {
+      return { valid: false, message: 'Invalid or expired reset link' };
+    }
+    if (user.passwordResetTokenUsedAt) {
+      return { valid: false, message: 'Reset link already used' };
+    }
+    if (
+      !user.passwordResetTokenExpiresAt ||
+      user.passwordResetTokenExpiresAt.getTime() < Date.now()
+    ) {
+      return { valid: false, message: 'Reset link has expired' };
+    }
+    return { valid: true };
+  }
+
+  async resetPasswordWithToken(
+    dto: ResetPasswordDto,
+    ipAddress?: string,
+  ): Promise<{ ok: true }> {
+    const hash = createHash('sha256').update(dto.token).digest('hex');
+    // Database query by hash is already effectively constant-time
+    // since we're using an indexed hash column
+    const user = await this.adminUserRepository.findByResetTokenHash(hash);
+    if (!user) {
+      throw new BadRequestException('Invalid reset token');
+    }
+    if (user.passwordResetTokenUsedAt) {
+      throw new BadRequestException('Reset token already used');
+    }
+    if (
+      !user.passwordResetTokenExpiresAt ||
+      user.passwordResetTokenExpiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException('Reset token expired');
+    }
+
+    // Update password
+    user.password = await this.hashPassword(dto.newPassword);
+    user.lastPasswordChangedAt = new Date();
+    await this.adminUserRepository.save(user);
+    await this.adminUserRepository.markPasswordResetUsed(user.id);
+    // Invalidate all refresh tokens (force re-login with new password)
+    await this.adminUserRepository.updateRefreshToken(user.id, null);
+
+    // Log successful password reset completion (for audit trail)
+    this.logger.log(
+      `Password reset completed: email=${user.email}, adminId=${user.id}, ip=${ipAddress || 'unknown'}`,
+    );
+
+    return { ok: true };
   }
 
   async getProfile(userId: string): Promise<AdminProfileResponseDto> {

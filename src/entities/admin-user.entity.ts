@@ -63,6 +63,20 @@ export class AdminUser {
   @Exclude()
   refreshToken: string | null;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  @Index()
+  @Exclude()
+  passwordResetTokenHash: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  passwordResetTokenExpiresAt: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  passwordResetTokenUsedAt: Date | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  lastPasswordChangedAt: Date | null;
+
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 

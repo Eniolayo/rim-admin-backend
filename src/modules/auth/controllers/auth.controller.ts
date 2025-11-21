@@ -7,6 +7,8 @@ import {
   UseGuards,
   Get,
   Patch,
+  Param,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -30,6 +32,9 @@ import {
   RefreshTokenDto,
   AdminProfileResponseDto,
   UpdateAdminProfileDto,
+  ForgotPasswordRequestDto,
+  VerifyResetTokenResponseDto,
+  ResetPasswordDto,
 } from '../dto';
 import { JwtAuthGuard } from '../guards/jwt-auth.guard';
 import { CurrentUser } from '../decorators/current-user.decorator';
@@ -174,6 +179,52 @@ export class AuthController {
       createdAt: user.createdAt,
       createdBy: user.createdBy ?? null,
     };
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Post('password/forgot')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request password reset with TOTP code' })
+  async forgotPassword(
+    @Body() body: ForgotPasswordRequestDto,
+    @Req() req: any,
+  ): Promise<{ ok: true }> {
+    // Extract IP address for audit logging
+    const ipAddress =
+      req.ip ||
+      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      req.connection?.remoteAddress ||
+      null;
+    return this.authService.requestPasswordReset(body, ipAddress);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @Get('password/reset/verify/:token')
+  @ApiOperation({ summary: 'Verify password reset token validity' })
+  async verifyResetToken(
+    @Param('token') token: string,
+  ): Promise<VerifyResetTokenResponseDto> {
+    return this.authService.verifyResetToken(token);
+  }
+
+  @Public()
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  @Post('password/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using reset token' })
+  async resetPassword(
+    @Body() body: ResetPasswordDto,
+    @Req() req: any,
+  ): Promise<{ ok: true }> {
+    // Extract IP address for audit logging
+    const ipAddress =
+      req.ip ||
+      req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
+      req.connection?.remoteAddress ||
+      null;
+    return this.authService.resetPasswordWithToken(body, ipAddress);
   }
 
   @Patch('profile')

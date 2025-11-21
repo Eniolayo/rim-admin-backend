@@ -41,4 +41,34 @@ export class AdminUserRepository {
   ): Promise<void> {
     await this.repository.update(id, { refreshToken });
   }
+
+  async setPasswordResetToken(
+    id: string,
+    tokenHash: string,
+    expiresAt: Date,
+  ): Promise<void> {
+    await this.repository.update(id, {
+      passwordResetTokenHash: tokenHash,
+      passwordResetTokenExpiresAt: expiresAt,
+      passwordResetTokenUsedAt: null,
+    });
+  }
+
+  async clearPasswordResetToken(id: string): Promise<void> {
+    await this.repository.update(id, {
+      passwordResetTokenHash: null,
+      passwordResetTokenExpiresAt: null,
+      passwordResetTokenUsedAt: null,
+    });
+  }
+
+  async markPasswordResetUsed(id: string): Promise<void> {
+    await this.repository.update(id, {
+      passwordResetTokenUsedAt: new Date(),
+    });
+  }
+
+  async findByResetTokenHash(hash: string): Promise<AdminUser | null> {
+    return this.repository.findOne({ where: { passwordResetTokenHash: hash } });
+  }
 }
