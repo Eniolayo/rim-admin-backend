@@ -28,6 +28,8 @@ export class EmailService {
     this.transporter = nodemailer.createTransport({
       host: emailConfig.host,
       port: emailConfig.port,
+      secure: false, // true for 465, false for other ports
+      requireTLS: true, // Use STARTTLS for port 587
       auth: {
         user: emailConfig.user,
         pass: emailConfig.pass,
@@ -58,6 +60,8 @@ export class EmailService {
         this.transporter = nodemailer.createTransport({
           host: emailConfig.host,
           port: emailConfig.port,
+          secure: false,
+          requireTLS: true,
           auth: {
             user: emailConfig.user,
             pass: emailConfig.pass,
