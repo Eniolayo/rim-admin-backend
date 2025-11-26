@@ -12,6 +12,7 @@ import { UsersController } from './controllers/users.controller';
 import { InvitationsController } from './controllers/invitations.controller';
 import { ActivityController } from './controllers/activity.controller';
 import { SettingsController } from './controllers/settings.controller';
+import { ApiKeysController } from './controllers/api-keys.controller';
 import { RolesService } from './services/roles.service';
 import { UsersService } from './services/users.service';
 import { InvitationsService } from './services/invitations.service';
@@ -27,6 +28,7 @@ import { SecuritySettingsRepository } from './repositories/settings.repository';
 import { ActivityLogInterceptor } from './interceptors/activity-log.interceptor';
 import { ActivityLogProcessor } from './processors/activity-log.processor';
 import { AuthModule } from '../auth/auth.module';
+import { ApiKeyModule } from '../auth/api-key.module';
 import { EmailModule } from '../email/email.module';
 import { RedisConfig } from '../../config/redis.config';
 
@@ -72,6 +74,7 @@ import { RedisConfig } from '../../config/redis.config';
       name: 'activity-logs',
     }),
     AuthModule,
+    ApiKeyModule,
     EmailModule,
   ],
   controllers: [
@@ -80,6 +83,7 @@ import { RedisConfig } from '../../config/redis.config';
     InvitationsController,
     ActivityController,
     SettingsController,
+    ApiKeysController,
   ],
   providers: [
     RolesService,

@@ -33,6 +33,7 @@ import {
   SystemConfig,
   CreditScoreHistory,
   Notification,
+  ApiKey,
 } from './entities';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { AdminTwoFactorGuard } from './modules/auth/guards/admin-2fa.guard';
@@ -164,6 +165,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
             SystemConfig,
             CreditScoreHistory,
             Notification,
+            ApiKey,
           ],
           synchronize: false,
           logging: configService.get('NODE_ENV') === 'development',
