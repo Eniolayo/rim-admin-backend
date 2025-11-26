@@ -48,6 +48,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { SystemConfigModule } from './modules/system-config/system-config.module';
 import { CreditScoreModule } from './modules/credit-score/credit-score.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MarkdownDocsService } from './common/services/markdown-docs.service';
 
 @Module({
   imports: [
@@ -201,6 +202,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
   controllers: [AppController],
   providers: [
     AppService,
+    MarkdownDocsService,
     {
       provide: APP_PIPE,
       useFactory: () =>

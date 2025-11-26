@@ -73,6 +73,26 @@ async function bootstrap(): Promise<void> {
       .setTitle('RIM Admin API')
       .setDescription('RIM Admin Backend API Documentation')
       .setVersion('1.0')
+      .addTag(
+        'schema',
+        'Database Schema - [Design Documentation](/api/rim-schema.html)',
+      )
+      .addTag(
+        'auth',
+        'Authentication - [API Key Auth Documentation](/api/api-key-authentication.html)',
+      )
+      .addTag(
+        'support',
+        'Support System - [Design Documentation](/api/support-system.html)',
+      )
+      .addTag(
+        'credit-score',
+        'Credit Score - [Design Documentation](/api/credit-score-multiplier.html)',
+      )
+      .addTag(
+        'loans',
+        'Loans - [USSD Loan Callback Documentation](/api/ussd-loan-callback.html)',
+      )
       .addBearerAuth()
       .build();
     const document = SwaggerModule.createDocument(app, config);
