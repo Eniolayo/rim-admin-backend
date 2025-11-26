@@ -69,6 +69,65 @@ async function bootstrap(): Promise<void> {
   // Swagger documentation
   const enableSwagger = configService.get<boolean>('app.enableSwagger', false);
   if (enableSwagger) {
+    const swaggerUsername = configService.get<string>('app.swaggerUsername');
+    const swaggerPassword = configService.get<string>('app.swaggerPassword');
+
+    // Add HTTP Basic Authentication for Swagger if credentials are configured
+    // This must be added BEFORE SwaggerModule.setup() to intercept requests
+    if (swaggerUsername && swaggerPassword) {
+      const swaggerBasePath = `/${apiPrefix}/docs`;
+
+      logger.log(
+        `Swagger password protection enabled for path: ${swaggerBasePath}`,
+      );
+
+      app.use((req, res, next) => {
+        // Check if this is a Swagger-related request
+        const isSwaggerPath =
+          req.path.startsWith(swaggerBasePath) ||
+          req.path === `/${apiPrefix}/docs-json` ||
+          req.path.startsWith(`${swaggerBasePath}/`);
+
+        if (isSwaggerPath) {
+          logger.log(`Swagger auth check for path: ${req.path}`);
+          const authHeader = req.headers.authorization;
+
+          if (!authHeader || !authHeader.startsWith('Basic ')) {
+            res.setHeader(
+              'WWW-Authenticate',
+              'Basic realm="Swagger Documentation"',
+            );
+            return res.status(401).send('Unauthorized');
+          }
+
+          // Decode Basic Auth credentials
+          try {
+            const base64Credentials = authHeader.split(' ')[1];
+            const credentials = Buffer.from(
+              base64Credentials,
+              'base64',
+            ).toString('utf-8');
+            const [username, password] = credentials.split(':');
+
+            if (username !== swaggerUsername || password !== swaggerPassword) {
+              res.setHeader(
+                'WWW-Authenticate',
+                'Basic realm="Swagger Documentation"',
+              );
+              return res.status(401).send('Unauthorized');
+            }
+          } catch (error) {
+            res.setHeader(
+              'WWW-Authenticate',
+              'Basic realm="Swagger Documentation"',
+            );
+            return res.status(401).send('Unauthorized');
+          }
+        }
+        next();
+      });
+    }
+
     const config = new DocumentBuilder()
       .setTitle('RIM Admin API')
       .setDescription('RIM Admin Backend API Documentation')
@@ -97,8 +156,14 @@ async function bootstrap(): Promise<void> {
       .build();
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup(`${apiPrefix}/docs`, app, document);
+
+    const authInfo =
+      swaggerUsername && swaggerPassword
+        ? ' (Protected with HTTP Basic Auth)'
+        : ' (No password protection - set SWAGGER_USERNAME and SWAGGER_PASSWORD to enable)';
+
     logger.log(
-      `Swagger documentation: http://localhost:${port}/${apiPrefix}/docs`,
+      `Swagger documentation: http://localhost:${port}/${apiPrefix}/docs${authInfo}`,
     );
   }
 

@@ -70,6 +70,8 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-noreply@rim.ng}
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-RIM Team}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      SWAGGER_USERNAME: ${SWAGGER_USERNAME:-admin}
+      SWAGGER_PASSWORD: ${SWAGGER_PASSWORD:-password}
     depends_on:
       postgres:
         condition: service_healthy
