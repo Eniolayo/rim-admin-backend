@@ -794,10 +794,3 @@ As we evolve, these foundations will enable us to:
 The balance between performance, reliability, and user experience positions us to serve the unbanked and underbanked populations who rely on USSD for financial services. By making loans accessible through the devices they already have, we're removing barriers to financial inclusion.
 
 ---
-
-## Related Documentation
-
-- [API Documentation](/api/docs) - Interactive Swagger documentation
-- [USSD Loan Callbacks](./Ussd%20loan%20Callback.md) - Developer-focused implementation guide
-- [API Key Authentication](./api-key-authentication.md) - API key setup and management
-- [Database Schema](/api/peb-fintech_complete_schema.html) - Complete database structure
