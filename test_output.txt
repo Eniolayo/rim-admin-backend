@@ -1,0 +1,134 @@
+
+> rim-admin-be@0.0.1 test:e2e
+> jest --config ./test/jest-e2e.json test/ussd-loans.e2e-spec.ts
+
+  console.error
+    Failed to initialize test app: error: password authentication failed for user "postgres"
+        at Parser.parseErrorMessage (C:\Users\olade\Desktop\Rim_Admin the update\rim admin-Be\rim-admin-backend\node_modules\pg-protocol\src\parser.ts:369:69)
+        at Parser.handlePacket (C:\Users\olade\Desktop\Rim_Admin the update\rim admin-Be\rim-admin-backend\node_modules\pg-protocol\src\parser.ts:187:21)
+        at Parser.parse (C:\Users\olade\Desktop\Rim_Admin the update\rim admin-Be\rim-admin-backend\node_modules\pg-protocol\src\parser.ts:102:30)
+        at Socket.<anonymous> (C:\Users\olade\Desktop\Rim_Admin the update\rim admin-Be\rim-admin-backend\node_modules\pg-protocol\src\index.ts:7:48)
+        at Socket.emit (node:events:518:28)
+        at addChunk (node:internal/streams/readable:561:12)
+        at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+        at Socket.Readable.push (node:internal/streams/readable:392:5)
+        at TCP.onStreamRead (node:internal/stream_base_commons:189:23) {
+      length: 104,
+      severity: 'FATAL',
+      code: '28P01',
+      detail: undefined,
+      hint: undefined,
+      position: undefined,
+      internalPosition: undefined,
+      internalQuery: undefined,
+      where: undefined,
+      schema: undefined,
+      table: undefined,
+      column: undefined,
+      dataType: undefined,
+      constraint: undefined,
+      file: 'auth.c',
+      line: '320',
+      routine: 'auth_failed'
+    }
+
+    [0m [90m 21 |[39m     console[33m.[39merror [33m=[39m ([33m...[39margs) [33m=>[39m {
+     [90m 22 |[39m       [36mtry[39m {
+    [31m[1m>[22m[39m[90m 23 |[39m         originalError([33m...[39margs)[33m;[39m
+     [90m    |[39m         [31m[1m^[22m[39m
+     [90m 24 |[39m       } [36mcatch[39m {
+     [90m 25 |[39m         [90m// Silently fail if console is no longer available[39m
+     [90m 26 |[39m       }[0m
+
+      at console.error (jest.setup.ts:23:9)
+      at initTestApp (utils/test-app.ts:79:13)
+      at Object.<anonymous> (ussd-loans.e2e-spec.ts:13:19)
+
+FAIL test/ussd-loans.e2e-spec.ts (23.485 s)
+  UssdLoansController (e2e)
+    /ussd/loan-offer (POST)
+      × should return offers in JSON format (74 ms)
+      × should return offers in Text format (2 ms)
+      × should return error for invalid user (6 ms)
+    /ussd/loan-approve (POST)
+      × should approve loan and return processing status (JSON) (5 ms)
+      × should return error for invalid selection (2 ms)
+
+  ● UssdLoansController (e2e) › /ussd/loan-offer (POST) › should return offers in JSON format
+
+    error: password authentication failed for user "postgres"
+
+      at Parser.parseErrorMessage (../node_modules/pg-protocol/src/parser.ts:369:69)
+      at Parser.handlePacket (../node_modules/pg-protocol/src/parser.ts:187:21)
+      at Parser.parse (../node_modules/pg-protocol/src/parser.ts:102:30)
+      at Socket.<anonymous> (../node_modules/pg-protocol/src/index.ts:7:48)
+
+  ● UssdLoansController (e2e) › /ussd/loan-offer (POST) › should return offers in Text format
+
+    error: password authentication failed for user "postgres"
+
+      at Parser.parseErrorMessage (../node_modules/pg-protocol/src/parser.ts:369:69)
+      at Parser.handlePacket (../node_modules/pg-protocol/src/parser.ts:187:21)
+      at Parser.parse (../node_modules/pg-protocol/src/parser.ts:102:30)
+      at Socket.<anonymous> (../node_modules/pg-protocol/src/index.ts:7:48)
+
+  ● UssdLoansController (e2e) › /ussd/loan-offer (POST) › should return error for invalid user
+
+    error: password authentication failed for user "postgres"
+
+      at Parser.parseErrorMessage (../node_modules/pg-protocol/src/parser.ts:369:69)
+      at Parser.handlePacket (../node_modules/pg-protocol/src/parser.ts:187:21)
+      at Parser.parse (../node_modules/pg-protocol/src/parser.ts:102:30)
+      at Socket.<anonymous> (../node_modules/pg-protocol/src/index.ts:7:48)
+
+  ● UssdLoansController (e2e) › /ussd/loan-approve (POST) › should approve loan and return processing status (JSON)
+
+    error: password authentication failed for user "postgres"
+
+      at Parser.parseErrorMessage (../node_modules/pg-protocol/src/parser.ts:369:69)
+      at Parser.handlePacket (../node_modules/pg-protocol/src/parser.ts:187:21)
+      at Parser.parse (../node_modules/pg-protocol/src/parser.ts:102:30)
+      at Socket.<anonymous> (../node_modules/pg-protocol/src/index.ts:7:48)
+
+  ● UssdLoansController (e2e) › /ussd/loan-approve (POST) › should approve loan and return processing status (JSON)
+
+    TypeError: Cannot read properties of undefined (reading 'phone')
+
+    [0m [90m 105 |[39m         [36mlet[39m validAmount [33m=[39m [35m0[39m[33m;[39m
+     [90m 106 |[39m
+    [31m[1m>[22m[39m[90m 107 |[39m         beforeAll([36masync[39m () [33m=>[39m {
+     [90m     |[39m                                  [31m[1m^[22m[39m
+     [90m 108 |[39m             [90m// Get offers first to ensure we have a valid session/option[39m
+     [90m 109 |[39m             [36mconst[39m payload [33m=[39m {
+     [90m 110 |[39m                 msisdn[33m:[39m testUser[33m.[39mphone[33m,[39m[0m
+
+      at Object.<anonymous> (ussd-loans.e2e-spec.ts:107:34)
+
+  ● UssdLoansController (e2e) › /ussd/loan-approve (POST) › should return error for invalid selection
+
+    error: password authentication failed for user "postgres"
+
+      at Parser.parseErrorMessage (../node_modules/pg-protocol/src/parser.ts:369:69)
+      at Parser.handlePacket (../node_modules/pg-protocol/src/parser.ts:187:21)
+      at Parser.parse (../node_modules/pg-protocol/src/parser.ts:102:30)
+      at Socket.<anonymous> (../node_modules/pg-protocol/src/index.ts:7:48)
+
+  ● UssdLoansController (e2e) › /ussd/loan-approve (POST) › should return error for invalid selection
+
+    TypeError: Cannot read properties of undefined (reading 'phone')
+
+    [0m [90m 105 |[39m         [36mlet[39m validAmount [33m=[39m [35m0[39m[33m;[39m
+     [90m 106 |[39m
+    [31m[1m>[22m[39m[90m 107 |[39m         beforeAll([36masync[39m () [33m=>[39m {
+     [90m     |[39m                                  [31m[1m^[22m[39m
+     [90m 108 |[39m             [90m// Get offers first to ensure we have a valid session/option[39m
+     [90m 109 |[39m             [36mconst[39m payload [33m=[39m {
+     [90m 110 |[39m                 msisdn[33m:[39m testUser[33m.[39mphone[33m,[39m[0m
+
+      at Object.<anonymous> (ussd-loans.e2e-spec.ts:107:34)
+
+Test Suites: 1 failed, 1 total
+Tests:       5 failed, 5 total
+Snapshots:   0 total
+Time:        24.583 s
+Ran all test suites matching test/ussd-loans.e2e-spec.ts.

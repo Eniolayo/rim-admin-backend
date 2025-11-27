@@ -12,18 +12,11 @@ import {
   PERMISSIONS_KEY,
   PermissionMetadata,
 } from '../decorators/permissions.decorator';
-import {
-  REQUIRE_SUPER_ADMIN_KEY,
-} from '../decorators/require-super-admin.decorator';
-import {
-  REQUIRE_SUPPORT_AGENT_KEY,
-} from '../decorators/require-support-agent.decorator';
-import {
-  REQUIRE_FINANCE_OFFICER_KEY,
-} from '../decorators/require-finance-officer.decorator';
-import {
-  REQUIRE_ADMIN_ONLY_KEY,
-} from '../decorators/require-admin-only.decorator';
+import { REQUIRE_SUPER_ADMIN_KEY } from '../decorators/require-super-admin.decorator';
+import { REQUIRE_SUPPORT_AGENT_KEY } from '../decorators/require-support-agent.decorator';
+import { REQUIRE_FINANCE_OFFICER_KEY } from '../decorators/require-finance-officer.decorator';
+import { REQUIRE_ADMIN_ONLY_KEY } from '../decorators/require-admin-only.decorator';
+import { isSuperAdminRole } from '../../../common/utils/role.utils';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -78,10 +71,11 @@ export class PermissionsGuard implements CanActivate {
     }
 
     // Check for permission-based access
-    const permissionMetadata = this.reflector.getAllAndOverride<PermissionMetadata>(
-      PERMISSIONS_KEY,
-      [context.getHandler(), context.getClass()],
-    );
+    const permissionMetadata =
+      this.reflector.getAllAndOverride<PermissionMetadata>(PERMISSIONS_KEY, [
+        context.getHandler(),
+        context.getClass(),
+      ]);
 
     if (permissionMetadata) {
       return this.checkPermission(user, permissionMetadata);
@@ -98,14 +92,15 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('User role not found');
     }
 
-    const roleName = user.roleEntity.name.toLowerCase().trim();
-    const isSuperAdmin = roleName === 'super_admin';
+    const isSuperAdmin = isSuperAdminRole(user.roleEntity.name);
 
     if (!isSuperAdmin) {
       this.logger.warn(
         `User ${user.id} (role: ${user.roleEntity.name}) attempted to access super admin endpoint`,
       );
-      throw new ForbiddenException('Insufficient permissions: Super admin access required');
+      throw new ForbiddenException(
+        'Insufficient permissions: Super admin access required',
+      );
     }
 
     this.logger.debug(`Super admin access granted for user ${user.id}`);
@@ -119,25 +114,32 @@ export class PermissionsGuard implements CanActivate {
     }
 
     const roleName = user.roleEntity.name.toLowerCase().trim();
-    const isSuperAdmin = roleName === 'super_admin';
+    const isSuperAdmin = isSuperAdminRole(user.roleEntity.name);
     const isAdmin = roleName === 'admin';
-    const isSupportAgent = roleName === 'moderator' || roleName === 'support agent';
+    const isSupportAgent =
+      roleName === 'moderator' || roleName === 'support agent';
 
     if (isSupportAgent) {
       this.logger.warn(
         `User ${user.id} (role: ${user.roleEntity.name}) attempted to access admin-only endpoint. Support agents are not allowed.`,
       );
-      throw new ForbiddenException('Insufficient permissions: Only admins and super admins can perform this action. Support agents are not allowed.');
+      throw new ForbiddenException(
+        'Insufficient permissions: Only admins and super admins can perform this action. Support agents are not allowed.',
+      );
     }
 
     if (!isSuperAdmin && !isAdmin) {
       this.logger.warn(
         `User ${user.id} (role: ${user.roleEntity.name}) attempted to access admin-only endpoint`,
       );
-      throw new ForbiddenException('Insufficient permissions: Admin or Super Admin access required');
+      throw new ForbiddenException(
+        'Insufficient permissions: Admin or Super Admin access required',
+      );
     }
 
-    this.logger.debug(`Admin-only access granted for user ${user.id} (role: ${user.roleEntity.name})`);
+    this.logger.debug(
+      `Admin-only access granted for user ${user.id} (role: ${user.roleEntity.name})`,
+    );
     return true;
   }
 
@@ -154,7 +156,9 @@ export class PermissionsGuard implements CanActivate {
       this.logger.warn(
         `User ${user.id} (role: ${user.roleEntity.name}) attempted to access moderator endpoint`,
       );
-      throw new ForbiddenException('Insufficient permissions: Moderator access required');
+      throw new ForbiddenException(
+        'Insufficient permissions: Moderator access required',
+      );
     }
 
     this.logger.debug(`Moderator access granted for user ${user.id}`);
@@ -174,7 +178,9 @@ export class PermissionsGuard implements CanActivate {
       this.logger.warn(
         `User ${user.id} (role: ${user.roleEntity.name}) attempted to access admin endpoint`,
       );
-      throw new ForbiddenException('Insufficient permissions: Admin access required');
+      throw new ForbiddenException(
+        'Insufficient permissions: Admin access required',
+      );
     }
 
     this.logger.debug(`Admin access granted for user ${user.id}`);
@@ -190,7 +196,10 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('User role not found');
     }
 
-    if (!user.roleEntity.permissions || user.roleEntity.permissions.length === 0) {
+    if (
+      !user.roleEntity.permissions ||
+      user.roleEntity.permissions.length === 0
+    ) {
       this.logger.warn(
         `User ${user.id} (role: ${user.roleEntity.name}) has no permissions`,
       );
@@ -231,4 +240,3 @@ export class PermissionsGuard implements CanActivate {
     return true;
   }
 }
-

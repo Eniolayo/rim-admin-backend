@@ -84,6 +84,19 @@ Once the server is running, access Swagger documentation at:
 http://localhost:3000/api/docs
 ```
 
+### Swagger Password Protection
+
+Swagger documentation can be password protected using HTTP Basic Authentication. To enable this, set the following environment variables:
+
+```bash
+SWAGGER_USERNAME=your_username
+SWAGGER_PASSWORD=your_password
+```
+
+If these environment variables are set, you'll be prompted for credentials when accessing the Swagger UI. If they're not set, Swagger will be accessible without authentication (useful for development).
+
+**Note:** It's recommended to set these credentials in production environments to protect your API documentation.
+
 ## Database Migrations
 
 ### Local Development (without Docker)
@@ -175,20 +188,20 @@ npm run test:cov
 
 ## Environment Variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NODE_ENV` | Environment (development/production/test/staging) | `development` |
-| `PORT` | Server port | `3000` |
-| `API_PREFIX` | API route prefix | `api` |
-| `DB_HOST` | PostgreSQL host | `localhost` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_USERNAME` | PostgreSQL username | `postgres` |
-| `DB_PASSWORD` | PostgreSQL password | `postgres` |
-| `DB_NAME` | Database name | `rim_db` |
-| `JWT_SECRET` | JWT secret key (min 32 chars) | Required |
-| `JWT_EXPIRATION` | JWT expiration time | `1h` |
-| `JWT_REFRESH_SECRET` | JWT refresh secret (min 32 chars) | Required |
-| `JWT_REFRESH_EXPIRATION` | Refresh token expiration | `7d` |
+| Variable                 | Description                                       | Default       |
+| ------------------------ | ------------------------------------------------- | ------------- |
+| `NODE_ENV`               | Environment (development/production/test/staging) | `development` |
+| `PORT`                   | Server port                                       | `3000`        |
+| `API_PREFIX`             | API route prefix                                  | `api`         |
+| `DB_HOST`                | PostgreSQL host                                   | `localhost`   |
+| `DB_PORT`                | PostgreSQL port                                   | `5432`        |
+| `DB_USERNAME`            | PostgreSQL username                               | `postgres`    |
+| `DB_PASSWORD`            | PostgreSQL password                               | `postgres`    |
+| `DB_NAME`                | Database name                                     | `rim_db`      |
+| `JWT_SECRET`             | JWT secret key (min 32 chars)                     | Required      |
+| `JWT_EXPIRATION`         | JWT expiration time                               | `1h`          |
+| `JWT_REFRESH_SECRET`     | JWT refresh secret (min 32 chars)                 | Required      |
+| `JWT_REFRESH_EXPIRATION` | Refresh token expiration                          | `7d`          |
 
 ## License
 

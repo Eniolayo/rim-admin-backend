@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { Logger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { User, RepaymentStatus } from '../../../entities/user.entity';
 import { Loan, LoanStatus } from '../../../entities/loan.entity';
 import {
@@ -150,13 +150,13 @@ export class CreditScoreService {
     const currentAmountPaid = Number(loan.amountPaid);
     const loanAmountDue = Number(loan.amountDue);
     const newAmountPaid = currentAmountPaid + repaymentAmount;
-    
+
     // Safety check: prevent amountPaid from exceeding amountDue
     // Clamp to amountDue if it would exceed
     const clampedAmountPaid = Math.min(newAmountPaid, loanAmountDue);
     loan.amountPaid = clampedAmountPaid;
     loan.outstandingAmount = Math.max(0, loanAmountDue - clampedAmountPaid);
-    
+
     // Log warning if clamping occurred
     if (clampedAmountPaid < newAmountPaid) {
       this.logger.warn(
@@ -415,9 +415,38 @@ export class CreditScoreService {
       }
     }
 
+    // Subtract outstanding debt from eligible amount
+    // Find all active loans (not COMPLETED or REJECTED)
+    const activeLoans = await this.loanRepository.find({
+      where: {
+        userId: userId,
+        status: In([
+          LoanStatus.PENDING,
+          LoanStatus.APPROVED,
+          LoanStatus.DISBURSED,
+          LoanStatus.REPAYING,
+          LoanStatus.DEFAULTED,
+        ]),
+      },
+    });
+
+    // Calculate total outstanding amount
+    const totalOutstanding = activeLoans.reduce((sum, loan) => {
+      return sum + Number(loan.outstandingAmount || 0);
+    }, 0);
+
+    // Subtract outstanding debt from eligible amount
+    eligibleAmount = Math.max(0, eligibleAmount - totalOutstanding);
+
     this.logger.debug(
-      { userId, creditScore: user.creditScore, eligibleAmount },
-      'Calculated eligible loan amount',
+      {
+        userId,
+        creditScore: user.creditScore,
+        eligibleAmount,
+        totalOutstanding,
+        activeLoansCount: activeLoans.length,
+      },
+      'Calculated eligible loan amount (after subtracting outstanding debt)',
     );
 
     return eligibleAmount;

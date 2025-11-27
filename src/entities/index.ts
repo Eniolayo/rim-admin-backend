@@ -15,3 +15,5 @@ export * from './admin-activity-log.entity';
 export * from './security-settings.entity';
 export * from './system-config.entity';
 export * from './credit-score-history.entity';
+export * from './notification.entity';
+export * from './api-key.entity';

@@ -32,6 +32,8 @@ import {
   SecuritySettings,
   SystemConfig,
   CreditScoreHistory,
+  Notification,
+  ApiKey,
 } from './entities';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { AdminTwoFactorGuard } from './modules/auth/guards/admin-2fa.guard';
@@ -45,6 +47,8 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { RedisModule } from './common/redis/redis.module';
 import { SystemConfigModule } from './modules/system-config/system-config.module';
 import { CreditScoreModule } from './modules/credit-score/credit-score.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MarkdownDocsService } from './common/services/markdown-docs.service';
 
 @Module({
   imports: [
@@ -161,6 +165,8 @@ import { CreditScoreModule } from './modules/credit-score/credit-score.module';
             SecuritySettings,
             SystemConfig,
             CreditScoreHistory,
+            Notification,
+            ApiKey,
           ],
           synchronize: false,
           logging: configService.get('NODE_ENV') === 'development',
@@ -191,10 +197,12 @@ import { CreditScoreModule } from './modules/credit-score/credit-score.module';
     DashboardModule,
     SystemConfigModule,
     CreditScoreModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [
     AppService,
+    MarkdownDocsService,
     {
       provide: APP_PIPE,
       useFactory: () =>

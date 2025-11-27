@@ -37,6 +37,7 @@ import { TicketHistory } from '../../../entities/ticket-history.entity';
 import { AdminUser } from '../../../entities/admin-user.entity';
 import { SupportAgent } from '../../../entities/support-agent.entity';
 import { EmailService } from '../../email/email.service';
+import { NotificationService } from '../../notifications/services/notification.service';
 
 @Injectable()
 export class SupportService {
@@ -54,6 +55,7 @@ export class SupportService {
     @InjectRepository(AdminRole)
     private readonly adminRoleRepository: Repository<AdminRole>,
     private readonly emailService: EmailService,
+    private readonly notificationService: NotificationService,
   ) {}
 
   async getTickets(filters: TicketFiltersDto): Promise<SupportTicket[]> {
@@ -237,6 +239,26 @@ export class SupportService {
         );
         // Don't fail ticket creation if email fails
       }
+
+      // Send in-app notification to assigned agent/admin
+      try {
+        await this.notificationService.notifyTicketAssigned(saved, dto.assignedTo);
+      } catch (error) {
+        this.logger.error(
+          `Failed to send ticket assignment notification for ticket ${saved.id}: ${error.message}`,
+        );
+        // Don't fail ticket creation if notification fails
+      }
+    }
+
+    // Notify all admins and superAdmins about the new ticket
+    try {
+      await this.notificationService.notifyTicketCreated(saved);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send ticket created notification for ticket ${saved.id}: ${error.message}`,
+      );
+      // Don't fail ticket creation if notification fails
     }
 
     this.logger.log(
@@ -385,6 +407,16 @@ export class SupportService {
       // Don't fail assignment if email fails
     }
 
+    // Send in-app notification to assigned agent/admin
+    try {
+      await this.notificationService.notifyTicketAssigned(updated, dto.agentId);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send ticket assignment notification for ticket ${updated.id}: ${error.message}`,
+      );
+      // Don't fail assignment if notification fails
+    }
+
     this.logger.log(
       `Ticket assigned successfully with ticket id ${updated.id} and ticket number ${updated.ticketNumber} to agent/admin id ${dto.agentId} and name ${updated.assignedToName}`,
     );
@@ -451,6 +483,19 @@ export class SupportService {
         details: dto.reason,
       }),
     );
+
+    // Send in-app notification to escalated admin/agent
+    if (escalatedToId) {
+      try {
+        await this.notificationService.notifyTicketEscalated(updated, escalatedToId);
+      } catch (error) {
+        this.logger.error(
+          `Failed to send ticket escalation notification for ticket ${updated.id}: ${error.message}`,
+        );
+        // Don't fail escalation if notification fails
+      }
+    }
+
     this.logger.log(
       `Ticket escalated successfully with ticket id ${updated.id} and ticket number ${updated.ticketNumber} to ${dto.agentId ? 'agent' : 'admin'} id ${escalatedToId} and name ${escalatedName}`,
     );

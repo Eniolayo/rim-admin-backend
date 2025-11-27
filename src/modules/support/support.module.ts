@@ -19,6 +19,7 @@ import { WsJwtGuard } from '../auth/guards/ws-jwt.guard';
 import { AuthModule } from '../auth/auth.module';
 import { TicketAccessGuard } from '../auth/guards/ticket-access.guard';
 import { EmailModule } from '../email/email.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { EmailModule } from '../email/email.module';
     ]),
     AuthModule,
     EmailModule,
+    NotificationsModule,
   ],
   controllers: [SupportController],
   providers: [

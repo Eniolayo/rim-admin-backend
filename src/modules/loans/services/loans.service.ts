@@ -1126,9 +1126,18 @@ export class LoansService {
       throw new NotFoundException(`Loan with ID ${id} not found`);
     }
 
+    // If loan is already disbursed, return it as success (idempotent operation)
+    if (loan.status === LoanStatus.DISBURSED) {
+      this.logger.log(
+        { loanId: loan.loanId, id: loan.id },
+        'Loan is already disbursed, returning existing loan',
+      );
+      return this.mapToResponse(loan);
+    }
+
     if (loan.status !== LoanStatus.APPROVED) {
       throw new BadRequestException(
-        `Loan must be approved before disbursement`,
+        `Loan must be approved before disbursement. Current status: ${loan.status}`,
       );
     }
 
