@@ -76,6 +76,9 @@ COPY --from=builder /app/src/config ./src/config
 # Copy common directory (in case any entities or seeds depend on it)
 COPY --from=builder /app/src/common ./src/common
 
+# Copy docs directory for markdown documentation
+COPY --from=builder /app/docs ./docs
+
 # Copy tsconfig for ts-node to work
 COPY tsconfig.json ./
 
