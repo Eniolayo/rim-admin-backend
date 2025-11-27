@@ -50,7 +50,8 @@ export class ApiKeysController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad request - email already has an active API key or invalid input',
+    description:
+      'Bad request - email already has an active API key or invalid input',
   })
   @ApiResponse({
     status: 403,
@@ -83,8 +84,7 @@ export class ApiKeysController {
       description: result.entity.description || undefined,
       expiresAt: result.entity.expiresAt,
       createdAt: result.entity.createdAt,
-      warning:
-        'Store this token securely. It will not be shown again.',
+      warning: 'Store this token securely. It will not be shown again.',
     };
   }
 
@@ -135,9 +135,7 @@ export class ApiKeysController {
     status: 404,
     description: 'API key not found',
   })
-  async getApiKeyById(
-    @Param('id') id: string,
-  ): Promise<ApiKeyListItemDto> {
+  async getApiKeyById(@Param('id') id: string): Promise<ApiKeyListItemDto> {
     const apiKey = await this.apiKeyService.getApiKeyById(id);
 
     return {
@@ -179,4 +177,3 @@ export class ApiKeysController {
     await this.apiKeyService.revokeApiKey(id, user.id);
   }
 }
-

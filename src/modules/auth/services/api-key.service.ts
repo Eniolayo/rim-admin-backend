@@ -11,6 +11,7 @@ import * as crypto from 'crypto';
 import { ApiKey, ApiKeyStatus } from '../../../entities/api-key.entity';
 import { AdminUser } from '../../../entities/admin-user.entity';
 import { AdminRole } from '../../../entities/admin-role.entity';
+import { isSuperAdminRole } from '../../../common/utils/role.utils';
 
 @Injectable()
 export class ApiKeyService {
@@ -64,8 +65,7 @@ export class ApiKeyService {
       throw new BadRequestException('Creator has no role assigned');
     }
 
-    const roleName = creator.roleEntity.name.toLowerCase().trim();
-    if (roleName !== 'super_admin') {
+    if (!isSuperAdminRole(creator.roleEntity.name)) {
       throw new BadRequestException(
         'Only Super Admin users can create API keys',
       );
@@ -113,12 +113,18 @@ export class ApiKeyService {
     token: string,
   ): Promise<{ user: AdminUser; apiKey: ApiKey } | null> {
     if (!token || token.length !== 96) {
+      this.logger.warn(
+        `validateApiToken: Invalid token format - length: ${token?.length || 0}`,
+      );
       return null;
     }
 
     try {
       // Extract prefix for O(1) lookup
       const tokenPrefix = token.substring(0, 8);
+      this.logger.log(
+        `validateApiToken: Looking up token with prefix: ${tokenPrefix}`,
+      );
 
       // Direct database lookup using indexed prefix
       const keyEntity = await this.apiKeyRepository.findOne({
@@ -127,18 +133,35 @@ export class ApiKeyService {
       });
 
       if (!keyEntity) {
+        this.logger.warn(
+          `validateApiToken: No active API key found with prefix: ${tokenPrefix}`,
+        );
         return null;
       }
+
+      this.logger.log(
+        `validateApiToken: Found API key entity - id: ${keyEntity.id}, email: ${keyEntity.email}`,
+      );
 
       // Verify token with bcrypt comparison
       const isTokenValid = await bcrypt.compare(token, keyEntity.tokenHash);
       if (!isTokenValid) {
+        this.logger.warn(
+          `validateApiToken: Bcrypt comparison failed for API key id: ${keyEntity.id}`,
+        );
         return null;
       }
 
+      this.logger.log(
+        `validateApiToken: Token hash matches for API key id: ${keyEntity.id}`,
+      );
+
       // Check expiration
-      if (keyEntity.expiresAt < new Date()) {
-        this.logger.warn(`API key ${keyEntity.id} has expired`);
+      const now = new Date();
+      if (keyEntity.expiresAt < now) {
+        this.logger.warn(
+          `API key ${keyEntity.id} has expired - expiresAt: ${keyEntity.expiresAt}, now: ${now}`,
+        );
         keyEntity.status = ApiKeyStatus.INACTIVE;
         await this.apiKeyRepository.save(keyEntity);
         return null;
@@ -156,7 +179,7 @@ export class ApiKeyService {
 
       if (!creator) {
         this.logger.warn(
-          `API key creator ${keyEntity.createdBy} not found`,
+          `validateApiToken: API key creator ${keyEntity.createdBy} not found`,
         );
         return null;
       }
@@ -164,27 +187,28 @@ export class ApiKeyService {
       // Verify creator has superAdmin role
       if (!creator.roleEntity) {
         this.logger.warn(
-          `API key creator ${keyEntity.createdBy} has no role`,
+          `validateApiToken: API key creator ${keyEntity.createdBy} has no role`,
         );
         return null;
       }
 
-      const roleName = creator.roleEntity.name.toLowerCase().trim();
-      if (roleName !== 'super_admin') {
+      if (!isSuperAdminRole(creator.roleEntity.name)) {
         this.logger.warn(
-          `API key creator ${keyEntity.createdBy} does not have superAdmin role (has: ${roleName})`,
+          `validateApiToken: API key creator ${keyEntity.createdBy} does not have superAdmin role (has: ${creator.roleEntity.name})`,
         );
         return null;
       }
 
-      this.logger.debug(
-        `API token validated successfully for ${keyEntity.email}`,
+      this.logger.log(
+        `validateApiToken: API token validated successfully for ${keyEntity.email}, creatorId: ${creator.id}`,
       );
       return { user: creator, apiKey: keyEntity };
     } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
       this.logger.error(
-        `Error validating API token: ${error.message}`,
-        error.stack,
+        `validateApiToken: Error validating API token - error: ${errorMessage}, stack: ${errorStack}`,
       );
       return null;
     }
@@ -267,4 +291,3 @@ export class ApiKeyService {
     return crypto.randomBytes(length).toString('hex');
   }
 }
-

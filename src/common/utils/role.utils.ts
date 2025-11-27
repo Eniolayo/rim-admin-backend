@@ -43,3 +43,20 @@ export function formatRoleNameNullable(
   }
   return formatRoleName(roleName);
 }
+
+/**
+ * Checks if a role name represents a super admin role.
+ * Accepts multiple formats: "super_admin", "super admin", or "super-admin"
+ *
+ * @param roleName - The role name to check (e.g., "super_admin", "super admin", "super-admin")
+ * @returns true if the role is a super admin role, false otherwise
+ */
+export function isSuperAdminRole(roleName: string | null | undefined): boolean {
+  if (!roleName) {
+    return false;
+  }
+
+  // Normalize: lowercase, trim, and replace spaces/hyphens with underscores
+  const normalized = roleName.toLowerCase().trim().replace(/[\s-]/g, '_');
+  return normalized === 'super_admin';
+}

@@ -24,12 +24,12 @@ async function bootstrap(): Promise<void> {
     const origin = req.headers.origin || 'no-origin';
     const method = req.method;
     const path = req.path;
-    logger.log({
-      msg: 'Request received',
-      origin,
-      method,
-      path,
-    });
+    const apiToken = req.headers['x-api-token'];
+    const hasApiToken = !!apiToken;
+    const apiTokenLength = apiToken ? String(apiToken).length : 0;
+    logger.log(
+      `Request received - origin: ${origin}, method: ${method}, path: ${path}, hasApiToken: ${hasApiToken}, apiTokenLength: ${apiTokenLength}`,
+    );
     next();
   });
 
@@ -51,6 +51,7 @@ async function bootstrap(): Promise<void> {
     allowedHeaders: [
       'Content-Type',
       'Authorization',
+      'x-api-token',
       'x-skip-auth-redirect',
       'x-skip-error-toast',
       'Accept',
@@ -133,24 +134,12 @@ async function bootstrap(): Promise<void> {
       .setDescription('RIM Admin Backend API Documentation')
       .setVersion('1.0')
       .addTag(
-        'schema',
-        'Database Schema - [Design Documentation](/api/rim-schema.html)',
+        'api-keys',
+        'API Keys - [Design Documentation](/api/admin-api-key-design.html)',
       )
       .addTag(
-        'auth',
-        'Authentication - [API Key Auth Documentation](/api/api-key-authentication.html)',
-      )
-      .addTag(
-        'support',
-        'Support System - [Design Documentation](/api/support-system.html)',
-      )
-      .addTag(
-        'credit-score',
-        'Credit Score - [Design Documentation](/api/credit-score-multiplier.html)',
-      )
-      .addTag(
-        'loans',
-        'Loans - [USSD Loan Callback Documentation](/api/ussd-loan-callback.html)',
+        'ussd-loans',
+        'USSD Loans - [Design Documentation](/api/ussd-loans-design.html)',
       )
       .addBearerAuth()
       .build();

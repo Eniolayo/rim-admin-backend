@@ -152,4 +152,58 @@ export class AppController {
       `);
     }
   }
+
+  @Public()
+  @SkipThrottle() // Documentation should not be throttled
+  @Get('ussd-loans-design.html')
+  @ApiExcludeEndpoint()
+  async getUssdLoansDesign(@Res() res: Response): Promise<void> {
+    try {
+      const html = await this.markdownDocsService.renderMarkdownAsHtml({
+        title: 'USSD Loans API - Design Decisions & Long-Term Strategy',
+        markdownPath: 'docs/ussd-loans-design.md',
+        footerNote:
+          'This documentation is rendered from Markdown and served dynamically.',
+      });
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+    } catch (error) {
+      res.status(500).send(`
+        <html>
+          <body>
+            <h1>Error loading documentation</h1>
+            <p>${error.message}</p>
+          </body>
+        </html>
+      `);
+    }
+  }
+
+  @Public()
+  @SkipThrottle() // Documentation should not be throttled
+  @Get('admin-api-key-design.html')
+  @ApiExcludeEndpoint()
+  async getAdminApiKeyDesign(@Res() res: Response): Promise<void> {
+    try {
+      const html = await this.markdownDocsService.renderMarkdownAsHtml({
+        title: 'Admin API Key Management - Design Decisions & Long-Term Strategy',
+        markdownPath: 'docs/admin-api-key-design.md',
+        footerNote:
+          'This documentation is rendered from Markdown and served dynamically.',
+      });
+
+      res.setHeader('Content-Type', 'text/html');
+      res.send(html);
+    } catch (error) {
+      res.status(500).send(`
+        <html>
+          <body>
+            <h1>Error loading documentation</h1>
+            <p>${error.message}</p>
+          </body>
+        </html>
+      `);
+    }
+  }
 }

@@ -38,10 +38,10 @@ We implemented a **dual-response-mode architecture** where each endpoint accepts
 
 The USSD loan flow consists of two endpoints, each serving a specific purpose in the user journey:
 
-| Endpoint                         | Purpose                          | Why Separate?                                                                 |
-| -------------------------------- | -------------------------------- | ----------------------------------------------------------------------------- |
-| `POST /api/ussd/loan-offer`      | Generate and display loan offers | Separates eligibility calculation from loan creation, allows users to see options before committing |
-| `POST /api/ussd/loan-approve`    | Create loan and initiate disbursement | Separates approval from disbursement, enables async processing for performance |
+| Endpoint                      | Purpose                               | Why Separate?                                                                                       |
+| ----------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `POST /api/ussd/loan-offer`   | Generate and display loan offers      | Separates eligibility calculation from loan creation, allows users to see options before committing |
+| `POST /api/ussd/loan-approve` | Create loan and initiate disbursement | Separates approval from disbursement, enables async processing for performance                      |
 
 The flow is intentionally sequential: users must first see offers before they can approve a loan. This two-step process prevents accidental loan creation and gives users time to review terms.
 
@@ -68,6 +68,7 @@ We chose **Redis for session storage** with a **180-second (3-minute) TTL**. Her
 **Why 180 Seconds?**
 
 Three minutes is a sweet spot that:
+
 - Gives users enough time to navigate the USSD menu and select an option
 - Accounts for slow network connections and user hesitation
 - Prevents stale sessions from being reused hours or days later
@@ -76,6 +77,7 @@ Three minutes is a sweet spot that:
 **Session Key Strategy:**
 
 Sessions are keyed by **phone number** (normalized to ensure consistency). This design choice recognizes that:
+
 - USSD interactions are phone-number-centric (users dial a code from their phone)
 - Phone numbers are reliably provided by telco networks
 - Normalization handles different formats (`+234`, `234`, `080`) consistently
@@ -98,6 +100,7 @@ The primary trade-off is Redis dependency. If Redis goes down, sessions are lost
 ### The Challenge
 
 USSD interfaces are limited—users can't easily type custom amounts or scroll through long lists. We need to present loan options that are:
+
 - Easy to navigate (numbered options)
 - Meaningful (significant differences between amounts)
 - Limited in count (typically 3-5 options max)
@@ -117,6 +120,7 @@ These percentages provide meaningful choices while keeping the menu concise. Hav
 **Why Hardcoded?**
 
 These percentages are hardcoded (not configurable) because:
+
 - USSD UX constraints don't change—the interface remains limited
 - Changing percentages frequently could confuse users
 - Testing has shown these bands work well for our user base
@@ -137,6 +141,7 @@ While percentages are hardcoded now, we could make them configurable if A/B test
 ### The Challenge
 
 During testing, we discovered that users (or network issues) could trigger multiple requests for the same loan approval. Without protection, this would create duplicate loans, causing:
+
 - Financial risk (multiple disbursements for one intent)
 - User confusion (unexpected loan charges)
 - Operational overhead (manual cleanup)
@@ -148,6 +153,7 @@ We implemented **multiple layers of idempotency protection** to handle different
 **Layer 1: Idempotency Key Lookup (Redis + Database)**
 
 Before creating a loan, we check if one already exists for this exact request:
+
 - **Fast path**: Check Redis cache first (sub-millisecond)
 - **Fallback**: Query database using idempotency key stored in loan metadata
 - **Idempotency key format**: `ussd:loan:{userId}:{sessionKey}:{amount}`
@@ -157,12 +163,14 @@ This ensures that retries (due to network timeouts, user impatience, etc.) retur
 **Layer 2: Recent Loan Cooldown (2 Hours)**
 
 We prevent rapid-fire loan requests by checking for loans created within the last 2 hours for the same phone number. This serves two purposes:
+
 - **Risk mitigation**: Prevents users from accidentally (or intentionally) creating multiple loans
 - **Operational protection**: Gives our systems time to process and prevents spam
 
 **Why 2 Hours?**
 
 Two hours is long enough to:
+
 - Complete loan disbursement and confirmation
 - Allow users to realize if they made a mistake
 - Prevent abuse while not being overly restrictive
@@ -175,6 +183,7 @@ Phone numbers are what telco networks provide reliably. Users may not have consi
 **Layer 3: Distributed Lock (Redis)**
 
 Before creating a loan, we acquire a distributed lock:
+
 - **Lock key**: `ussd:loan:lock:{userId}:{sessionKey}`
 - **TTL**: 30 seconds (enough for loan creation, prevents deadlocks)
 - **Purpose**: Prevents concurrent requests from multiple servers/processes from creating duplicates
@@ -182,6 +191,7 @@ Before creating a loan, we acquire a distributed lock:
 **Layer 4: Double-Check After Lock Acquisition**
 
 Even after acquiring the lock, we double-check for existing loans. This handles race conditions where:
+
 - Request A checks (no loan exists)
 - Request B checks (no loan exists)
 - Request A acquires lock and creates loan
@@ -191,6 +201,7 @@ Even after acquiring the lock, we double-check for existing loans. This handles 
 **Why So Many Layers?**
 
 Each layer handles different failure scenarios:
+
 - **Idempotency keys**: Handle retries of the same request
 - **Cooldown period**: Handle user behavior (rapid requests)
 - **Distributed locks**: Handle concurrent requests from multiple servers
@@ -213,6 +224,7 @@ Traditional loan models add interest to the repayment amount. For example, if yo
 ### Our Approach: Interest Deducted at Disbursement
 
 We deduct interest **upfront** from the loan amount:
+
 - **Loan amount**: 10,000 NGN (what user sees and repays)
 - **Interest rate**: 10%
 - **Interest**: 1,000 NGN
@@ -247,12 +259,14 @@ The upfront deduction model is common in microfinance and aligns with our target
 ### The Challenge
 
 Loan disbursement involves multiple steps:
+
 - Update loan status
 - Trigger payment processing (potentially external API calls)
 - Send notifications
 - Update user balances
 
 If we do this synchronously, the `/api/ussd/loan-approve` endpoint could take 5-10 seconds or more, causing:
+
 - USSD timeouts (telco networks typically timeout after 30-60 seconds, but slow responses frustrate users)
 - Poor user experience (users wait on their phone for responses)
 - System bottlenecks (disbursement processing blocks other requests)
@@ -264,6 +278,7 @@ We return a response to users **immediately** (within 2 seconds) indicating thei
 **Performance Benchmark:**
 
 Our target is **sub-2-second response times** for USSD endpoints. This ensures:
+
 - Users get immediate feedback (their request is accepted)
 - USSD sessions don't timeout
 - System remains responsive under load
@@ -284,6 +299,7 @@ Our target is **sub-2-second response times** for USSD endpoints. This ensures:
 **Error Handling:**
 
 If disbursement fails:
+
 - Job is retried automatically (up to 3 times)
 - If all retries fail, job is marked as failed and kept for 24 hours
 - Operations team can manually retry failed jobs
@@ -292,6 +308,7 @@ If disbursement fails:
 **Why Queue Instead of Immediate Processing?**
 
 The queue provides:
+
 - **Reliability**: Failed disbursements are automatically retried
 - **Observability**: We can monitor queue depth, processing times, failures
 - **Scalability**: We can add more workers as volume grows
@@ -327,6 +344,7 @@ We set **1000 requests per minute** for USSD endpoints, compared to 100 requests
 **Abuse Concerns:**
 
 While 1000/minute seems permissive, we have other protections:
+
 - **API key authentication**: Only authorized telco partners can access endpoints
 - **Cooldown periods**: 2-hour cooldown between loans per phone number prevents spam
 - **Idempotency**: Duplicate requests are handled gracefully
@@ -335,6 +353,7 @@ While 1000/minute seems permissive, we have other protections:
 **Why Not Unlimited?**
 
 Even with protections, some rate limiting is necessary:
+
 - **Cost control**: Each request has database/Redis costs
 - **DoS protection**: Malicious actors could overwhelm the system
 - **Fair resource allocation**: Ensures one partner doesn't monopolize resources
@@ -342,32 +361,43 @@ Even with protections, some rate limiting is necessary:
 **Future Adjustments:**
 
 As we learn traffic patterns, we can:
+
 - Adjust limits per API key (different limits for different telco partners)
 - Implement dynamic rate limiting (reduce limits during high load)
 - Add burst allowances (allow short spikes above the limit)
 
 ---
 
-## Design Decision #7: API Key Authentication for External Integration
+## Design Decision #7: Single-Token API Key Authentication for External Integration
 
 ### The Challenge
 
 USSD endpoints need to be accessible to external systems (telco networks, middle servers) without requiring user-level authentication. These systems need programmatic access that's secure but doesn't require maintaining user sessions.
 
-### Our Approach: API Key + Secret Authentication
+### Our Approach: Single-Token API Authentication
 
-We use **API key authentication** instead of JWT tokens. API keys are simpler for external integrations:
+We use **single-token API authentication** instead of JWT tokens or key-secret pairs. A single 96-character token provides simplicity and security for external integrations:
 
-**Why API Keys Over JWT?**
+**Why Single Token Over JWT or Key-Secret Pairs?**
 
-1. **Stateless but simple**: API keys don't expire (unless rotated), making them easier for external systems to manage
+1. **Stateless but simple**: API tokens don't require refresh flows, making them easier for external systems to manage
 2. **No token refresh**: External systems don't need to handle token expiration and refresh flows
-3. **Partner management**: Each telco partner can have their own API key for monitoring and access control
-4. **Integration simplicity**: External systems just include headers (`x-api-key` and `x-api-secret`), no OAuth flows needed
+3. **Simpler integration**: Only one header (`x-api-token`) instead of multiple headers, reducing integration complexity
+4. **Partner management**: Each telco partner can have their own API token for monitoring and access control
+5. **Security through hashing**: Tokens are hashed with bcrypt before storage, ensuring security even if database is compromised
+
+**Token Structure:**
+
+- **Format**: 96-character hexadecimal string (48 bytes)
+- **Header**: `x-api-token` (case-insensitive)
+- **Storage**: First 8 characters stored as indexed prefix for O(1) lookup, full token hashed with bcrypt
+- **Expiration**: 30-day automatic expiration (configurable per key)
+- **One per email**: Enforced constraint prevents multiple active keys per external user
 
 **Architecture Pattern:**
 
 There's a **middle server** between telco networks and our application:
+
 - **Telco** → **Middle Server** → **Our API**
 - The middle server handles:
   - Protocol translation (telco-specific formats to our API format)
@@ -375,22 +405,33 @@ There's a **middle server** between telco networks and our application:
   - Logging and monitoring
   - Rate limiting per telco
 
-API key authentication makes it easy for this middle server to authenticate without complex token management.
+Single-token authentication makes it easy for this middle server to authenticate without complex token management or multiple credential handling.
 
 **Security Considerations:**
 
-- **Key rotation**: API keys can be rotated without code changes (just update the key)
-- **Access control**: Different API keys can have different permissions (future enhancement)
-- **Audit trail**: All requests are logged with API key identifier for security monitoring
-- **Revocation**: Compromised keys can be immediately revoked
+- **Token hashing**: Full tokens are hashed with bcrypt (10 rounds) before storage—plain tokens are only shown once during generation
+- **Prefix indexing**: First 8 characters are indexed for O(1) database lookup, improving performance
+- **Automatic expiration**: Tokens expire after 30 days, requiring rotation
+- **Status management**: Tokens can be `active`, `inactive`, or `revoked` for immediate access control
+- **SuperAdmin-only creation**: Only SuperAdmin users can create API tokens, ensuring strict access control
+- **Audit trail**: All requests are logged with API key identifier and last-used timestamp for security monitoring
+- **Immediate revocation**: Compromised keys can be immediately revoked without waiting for expiration
+
+**Rate Limiting:**
+
+- **Per-token rate limiting**: 1000 requests per minute per API token (enforced via `ApiKeyRateLimitGuard`)
+- **Redis-based tracking**: Efficient rate limit counters using Redis
+- **Fail-open design**: If Redis is unavailable, requests are allowed through to prevent service disruption
 
 **Long-Term Vision:**
 
 As we add more partners, we can:
-- Implement per-key rate limits
-- Add API key scoping (read-only, specific endpoints)
-- Create API key usage dashboards for partners
-- Implement key expiration and rotation policies
+
+- Implement per-token rate limits (currently uniform, but architecture supports per-token configuration)
+- Add token scoping (read-only, specific endpoints)
+- Create API token usage dashboards for partners
+- Implement automatic token rotation policies
+- Add token metadata (IP whitelisting, usage analytics)
 
 ---
 
@@ -432,6 +473,7 @@ Invalidating immediately after loan creation would prevent retries if disburseme
 ### The Challenge
 
 Credit limits can change between when offers are generated and when loans are approved. Users might:
+
 - Repay other loans (increasing available credit)
 - Have new loans approved (decreasing available credit)
 - Have credit limits adjusted by admins
@@ -457,6 +499,7 @@ Credit limits are validated **at loan creation time** (in `/api/ussd/loan-approv
 **What Happens if Limit Changes Between Offer and Approval?**
 
 If a user's credit limit changes (or they take another loan) between offer and approval:
+
 - Loan creation validates current state
 - If they're over limit, creation fails with clear error message
 - User can request new offers with updated eligibility
@@ -467,6 +510,7 @@ If a user's credit limit changes (or they take another loan) between offer and a
 - **User frustration**: Users select an offer only to be told they're not eligible
 
 We accept this trade-off because:
+
 - Credit limits rarely change mid-session
 - The validation prevents financial risk (over-lending)
 - Clear error messages help users understand what happened
@@ -475,6 +519,7 @@ We accept this trade-off because:
 **Future Enhancements:**
 
 We could add real-time limit checks to offer generation, but this would require:
+
 - Caching active loan summaries per user (Redis)
 - More complex offer generation logic
 - Additional latency
@@ -488,6 +533,7 @@ For now, validation at creation provides the right balance of performance and ri
 ### The Challenge
 
 Loan identifiers need to be:
+
 - **Unique**: No two loans can have the same ID
 - **Traceable**: Support staff need to reference loans in conversations
 - **Searchable**: Admins need to find loans quickly in the frontend
@@ -512,6 +558,7 @@ We generate loan IDs in the format: `USS-YYYY-NNN` (e.g., `USS-2024-001`)
 **Scalability Considerations:**
 
 Sequential IDs reset each year. For 2024:
+
 - Format allows up to 999 loans per year (`USS-2024-999`)
 - If we exceed 999, we can extend to 4 digits (`USS-2024-1234`) or 5 digits
 
@@ -685,6 +732,7 @@ The operational benefits (easier support, better UX) outweigh the complexity. Ad
 ### The Challenge
 
 When something goes wrong during a USSD loan flow, users need clear guidance. Generic error messages lead to support tickets and abandoned sessions. USSD interfaces are particularly challenging because:
+
 - Limited text length (typically 160 characters)
 - No visual formatting (no colors, bold, etc.)
 - Users can't easily go back or retry
@@ -702,6 +750,7 @@ Errors are designed to be actionable and user-friendly:
 **JSON Mode Errors:**
 
 Include structured error information:
+
 ```json
 {
   "status": "error",
@@ -712,6 +761,7 @@ Include structured error information:
 ```
 
 This allows integration servers to:
+
 - Log errors with context
 - Route users to onboarding if needed
 - Provide better error messages to end users
@@ -735,6 +785,7 @@ Every design decision in the USSD Loans API serves multiple purposes: immediate 
 - **Flexibility**: Dual response modes enable different integration patterns
 
 As we evolve, these foundations will enable us to:
+
 - **Scale** to millions of users across multiple telco partners
 - **Innovate** with new loan products and user experiences
 - **Comply** with financial regulations as we expand
@@ -750,4 +801,3 @@ The balance between performance, reliability, and user experience positions us t
 - [USSD Loan Callbacks](./Ussd%20loan%20Callback.md) - Developer-focused implementation guide
 - [API Key Authentication](./api-key-authentication.md) - API key setup and management
 - [Database Schema](/api/peb-fintech_complete_schema.html) - Complete database structure
-

@@ -58,7 +58,7 @@ export class UssdLoansService {
     const sessionKey = dto.sessionId || normalizedPhone;
 
     const user = await this.userRepository.findByPhone(normalizedPhone);
-    this.logger.log(`${ normalizedPhone }, Normalized phone number`);
+    this.logger.log(`${normalizedPhone}, Normalized phone number`);
 
     if (!user) {
       if (responseType === 'json') {
@@ -81,7 +81,20 @@ export class UssdLoansService {
 
     if (!eligibleAmount || eligibleAmount <= 0) {
       if (responseType === 'json') {
-        throw new NotFoundException('User not eligible for any amount');
+        // Return empty response instead of 404
+        const json: UssdLoanOfferJson = {
+          status: 'success',
+          type: 'loan-offer',
+          sessionId: sessionKey,
+          phoneNumber: dto.phoneNumber,
+          userId: user.id,
+          offers: [],
+          metadata: {
+            eligibleAmount: 0,
+            network: dto.network,
+          },
+        };
+        return json;
       }
       return this.asError(
         'loan-offer',
@@ -99,7 +112,20 @@ export class UssdLoansService {
 
     if (!offers.length) {
       if (responseType === 'json') {
-        throw new NotFoundException('No offers available');
+        // Return empty response instead of 404
+        const json: UssdLoanOfferJson = {
+          status: 'success',
+          type: 'loan-offer',
+          sessionId: sessionKey,
+          phoneNumber: dto.phoneNumber,
+          userId: user.id,
+          offers: [],
+          metadata: {
+            eligibleAmount,
+            network: dto.network,
+          },
+        };
+        return json;
       }
       return this.asError(
         'loan-offer',
@@ -212,12 +238,17 @@ export class UssdLoansService {
       );
     }
 
-    const loan = await this.createOrReuseUssdLoan(
-      user,
-      amount,
-      dto,
-      session,
-    );
+    // Validate that the selected amount doesn't exceed the eligible amount
+    if (amount > session.eligibleAmount) {
+      return this.asApproveError(
+        'INVALID_SELECTION',
+        'Selected amount exceeds eligible loan amount',
+        dto,
+        responseType,
+      );
+    }
+
+    const loan = await this.createOrReuseUssdLoan(user, amount, dto, session);
 
     // Check if loan is already disbursed (from previous request or concurrent processing)
     const isAlreadyDisbursed = loan.status === LoanStatus.DISBURSED;
@@ -263,15 +294,27 @@ export class UssdLoansService {
     interestRate: number,
     repaymentPeriod: number,
   ): UssdOfferSession['offers'] {
+    // Ensure eligibleAmount is valid
+    if (!eligibleAmount || eligibleAmount <= 0) {
+      return [];
+    }
+
     const rawAmounts = [
       Math.round(eligibleAmount * 0.5),
       Math.round(eligibleAmount * 0.75),
       Math.round(eligibleAmount),
     ];
 
-    const unique = Array.from(new Set(rawAmounts)).filter((a) => a > 0);
+    // Filter out invalid amounts and ensure none exceed eligible amount
+    const validAmounts = Array.from(new Set(rawAmounts))
+      .filter((a) => a > 0)
+      .map((a) => Math.min(a, eligibleAmount)) // Cap at eligible amount
+      .filter((a) => a > 0); // Remove any that became 0 after capping
 
-    return unique.map((amount, idx) => ({
+    // Sort amounts in ascending order for better UX
+    validAmounts.sort((a, b) => a - b);
+
+    return validAmounts.map((amount, idx) => ({
       option: idx + 1,
       amount,
       currency: 'NGN',
@@ -350,9 +393,7 @@ export class UssdLoansService {
     const eligibleAmount =
       await this.creditScoreService.calculateEligibleLoanAmount(user.id);
     const interestRate =
-      await this.creditScoreService.calculateInterestRateByCreditScore(
-        user.id,
-      );
+      await this.creditScoreService.calculateInterestRateByCreditScore(user.id);
     const repaymentPeriod =
       await this.creditScoreService.calculateRepaymentPeriodByCreditScore(
         user.id,
@@ -385,14 +426,15 @@ export class UssdLoansService {
       if (Number.isNaN(idx) || idx < 0 || idx >= session.offers.length) {
         return undefined;
       }
-      return session.offers[idx].amount;
+      const amount = session.offers[idx].amount;
+      // Ensure the amount from the offer doesn't exceed eligible amount
+      return amount <= session.eligibleAmount ? amount : undefined;
     }
 
     if (dto.selectedAmount) {
-      const match = session.offers.find(
-        (o) => o.amount === Number(dto.selectedAmount),
-      );
-      if (match) {
+      const requestedAmount = Number(dto.selectedAmount);
+      const match = session.offers.find((o) => o.amount === requestedAmount);
+      if (match && match.amount <= session.eligibleAmount) {
         return match.amount;
       }
     }
@@ -682,13 +724,7 @@ export class UssdLoansService {
     try {
       const redisClient = this.redisService.getClient();
       // Use SET with NX (only set if not exists) and EX (expiration)
-      const result = await redisClient.set(
-        key,
-        '1',
-        'EX',
-        ttlSeconds,
-        'NX',
-      );
+      const result = await redisClient.set(key, '1', 'EX', ttlSeconds, 'NX');
       return result === 'OK';
     } catch (error) {
       this.logger.error(
@@ -733,5 +769,3 @@ export class UssdLoansService {
     }
   }
 }
-
-
