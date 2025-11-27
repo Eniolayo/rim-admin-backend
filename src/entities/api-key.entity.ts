@@ -18,7 +18,7 @@ export enum ApiKeyStatus {
 }
 
 @Entity('API_KEYS')
-@Index(['apiKey'], { unique: true })
+@Index(['tokenPrefix'], { unique: true })
 @Index(['email'], { unique: true })
 @Index(['status'])
 @Index(['createdBy'])
@@ -26,17 +26,13 @@ export class ApiKey {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @Column({ type: 'varchar', length: 255, unique: true })
+  @Column({ type: 'varchar', length: 8, unique: true })
   @Exclude()
-  apiKey: string; // Hashed API key
+  tokenPrefix: string; // First 8 characters for O(1) lookup
 
   @Column({ type: 'varchar', length: 255 })
   @Exclude()
-  apiKeyHash: string; // Bcrypt hash of the API key
-
-  @Column({ type: 'varchar', length: 255 })
-  @Exclude()
-  apiSecret: string; // Bcrypt hash of the API secret
+  tokenHash: string; // Bcrypt hash of the full 96-character token
 
   @Column({ type: 'varchar', length: 255 })
   name: string; // External user's name

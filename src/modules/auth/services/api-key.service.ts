@@ -26,19 +26,19 @@ export class ApiKeyService {
   ) {}
 
   /**
-   * Generate a new API key and secret pair
+   * Generate a new API token
    * @param createdBy - ID of the SuperAdmin creating the API key
    * @param name - External user's name
    * @param email - External user's email (must be unique)
    * @param description - Optional description
-   * @returns Plain API key and secret (only shown once)
+   * @returns Plain API token (only shown once)
    */
-  async generateApiKey(
+  async generateApiToken(
     createdBy: string,
     name: string,
     email: string,
     description?: string,
-  ): Promise<{ apiKey: string; apiSecret: string; entity: ApiKey }> {
+  ): Promise<{ token: string; entity: ApiKey }> {
     // Check if email already has an active API key
     const existingKey = await this.apiKeyRepository.findOne({
       where: { email, status: ApiKeyStatus.ACTIVE },
@@ -71,22 +71,18 @@ export class ApiKeyService {
       );
     }
 
-    // Generate API key (32 characters)
-    const apiKey = this.generateSecureToken(32);
-    const apiKeyHash = await bcrypt.hash(apiKey, 10);
-
-    // Generate API secret (64 characters)
-    const apiSecret = this.generateSecureToken(64);
-    const apiSecretHash = await bcrypt.hash(apiSecret, 10);
+    // Generate 96-character token (48 bytes = 96 hex characters)
+    const token = this.generateSecureToken(48);
+    const tokenPrefix = token.substring(0, 8); // First 8 chars for O(1) lookup
+    const tokenHash = await bcrypt.hash(token, 10);
 
     // Calculate expiration date (30 days from now)
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
 
     const apiKeyEntity = this.apiKeyRepository.create({
-      apiKey: apiKeyHash, // Store hash in apiKey field
-      apiKeyHash,
-      apiSecret: apiSecretHash,
+      tokenPrefix,
+      tokenHash,
       name,
       email,
       description: description || null,
@@ -98,99 +94,96 @@ export class ApiKeyService {
     const saved = await this.apiKeyRepository.save(apiKeyEntity);
 
     this.logger.log(
-      `API key generated for ${email} by ${creator.email} (ID: ${saved.id})`,
+      `API token generated for ${email} by ${creator.email} (ID: ${saved.id})`,
     );
 
-    // Return plain values (only time they're visible)
+    // Return plain token (only time it's visible)
     return {
-      apiKey,
-      apiSecret,
+      token,
       entity: saved,
     };
   }
 
   /**
-   * Validate API key and secret from request headers
-   * @param apiKey - Plain API key from header
-   * @param apiSecret - Plain API secret from header
-   * @returns AdminUser with superAdmin role if valid, null otherwise
+   * Validate API token from request header
+   * @param token - Plain API token from header (96 characters)
+   * @returns Object containing AdminUser with superAdmin role and ApiKey entity if valid, null otherwise
    */
-  async validateApiKey(
-    apiKey: string,
-    apiSecret: string,
-  ): Promise<AdminUser | null> {
-    if (!apiKey || !apiSecret) {
+  async validateApiToken(
+    token: string,
+  ): Promise<{ user: AdminUser; apiKey: ApiKey } | null> {
+    if (!token || token.length !== 96) {
       return null;
     }
 
     try {
-      // Find all active API keys
-      const apiKeys = await this.apiKeyRepository.find({
-        where: { status: ApiKeyStatus.ACTIVE },
+      // Extract prefix for O(1) lookup
+      const tokenPrefix = token.substring(0, 8);
+
+      // Direct database lookup using indexed prefix
+      const keyEntity = await this.apiKeyRepository.findOne({
+        where: { tokenPrefix, status: ApiKeyStatus.ACTIVE },
         relations: ['creator'],
       });
 
-      for (const keyEntity of apiKeys) {
-        // Verify API key
-        const isKeyValid = await bcrypt.compare(apiKey, keyEntity.apiKeyHash);
-        if (!isKeyValid) continue;
-
-        // Verify API secret
-        const isSecretValid = await bcrypt.compare(apiSecret, keyEntity.apiSecret);
-        if (!isSecretValid) continue;
-
-        // Check expiration
-        if (keyEntity.expiresAt < new Date()) {
-          this.logger.warn(`API key ${keyEntity.id} has expired`);
-          // Optionally update status to inactive
-          keyEntity.status = ApiKeyStatus.INACTIVE;
-          await this.apiKeyRepository.save(keyEntity);
-          continue;
-        }
-
-        // Update last used timestamp
-        keyEntity.lastUsedAt = new Date();
-        await this.apiKeyRepository.save(keyEntity);
-
-        // Get the creator and ensure they have superAdmin role
-        const creator = await this.adminUserRepository.findOne({
-          where: { id: keyEntity.createdBy },
-          relations: ['roleEntity'],
-        });
-
-        if (!creator) {
-          this.logger.warn(
-            `API key creator ${keyEntity.createdBy} not found`,
-          );
-          return null;
-        }
-
-        // Verify creator has superAdmin role
-        if (!creator.roleEntity) {
-          this.logger.warn(
-            `API key creator ${keyEntity.createdBy} has no role`,
-          );
-          return null;
-        }
-
-        const roleName = creator.roleEntity.name.toLowerCase().trim();
-        if (roleName !== 'super_admin') {
-          this.logger.warn(
-            `API key creator ${keyEntity.createdBy} does not have superAdmin role (has: ${roleName})`,
-          );
-          return null;
-        }
-
-        this.logger.debug(
-          `API key validated successfully for ${keyEntity.email}`,
-        );
-        return creator;
+      if (!keyEntity) {
+        return null;
       }
 
-      return null;
+      // Verify token with bcrypt comparison
+      const isTokenValid = await bcrypt.compare(token, keyEntity.tokenHash);
+      if (!isTokenValid) {
+        return null;
+      }
+
+      // Check expiration
+      if (keyEntity.expiresAt < new Date()) {
+        this.logger.warn(`API key ${keyEntity.id} has expired`);
+        keyEntity.status = ApiKeyStatus.INACTIVE;
+        await this.apiKeyRepository.save(keyEntity);
+        return null;
+      }
+
+      // Update last used timestamp
+      keyEntity.lastUsedAt = new Date();
+      await this.apiKeyRepository.save(keyEntity);
+
+      // Get the creator and ensure they have superAdmin role
+      const creator = await this.adminUserRepository.findOne({
+        where: { id: keyEntity.createdBy },
+        relations: ['roleEntity'],
+      });
+
+      if (!creator) {
+        this.logger.warn(
+          `API key creator ${keyEntity.createdBy} not found`,
+        );
+        return null;
+      }
+
+      // Verify creator has superAdmin role
+      if (!creator.roleEntity) {
+        this.logger.warn(
+          `API key creator ${keyEntity.createdBy} has no role`,
+        );
+        return null;
+      }
+
+      const roleName = creator.roleEntity.name.toLowerCase().trim();
+      if (roleName !== 'super_admin') {
+        this.logger.warn(
+          `API key creator ${keyEntity.createdBy} does not have superAdmin role (has: ${roleName})`,
+        );
+        return null;
+      }
+
+      this.logger.debug(
+        `API token validated successfully for ${keyEntity.email}`,
+      );
+      return { user: creator, apiKey: keyEntity };
     } catch (error) {
       this.logger.error(
-        `Error validating API key: ${error.message}`,
+        `Error validating API token: ${error.message}`,
         error.stack,
       );
       return null;

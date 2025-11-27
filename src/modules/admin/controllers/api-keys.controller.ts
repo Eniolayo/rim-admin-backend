@@ -42,10 +42,10 @@ export class ApiKeysController {
   constructor(private readonly apiKeyService: ApiKeyService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Generate a new API key and secret' })
+  @ApiOperation({ summary: 'Generate a new API token' })
   @ApiResponse({
     status: 201,
-    description: 'API key generated successfully',
+    description: 'API token generated successfully',
     type: ApiKeyResponseDto,
   })
   @ApiResponse({
@@ -65,10 +65,10 @@ export class ApiKeysController {
     @Body() dto: CreateApiKeyDto,
   ): Promise<ApiKeyResponseDto> {
     this.logger.log(
-      `POST /admin/api-keys - Generating API key for ${dto.email} by ${user.email}`,
+      `POST /admin/api-keys - Generating API token for ${dto.email} by ${user.email}`,
     );
 
-    const result = await this.apiKeyService.generateApiKey(
+    const result = await this.apiKeyService.generateApiToken(
       user.id,
       dto.name,
       dto.email,
@@ -77,15 +77,14 @@ export class ApiKeysController {
 
     return {
       id: result.entity.id,
-      apiKey: result.apiKey, // Only shown once
-      apiSecret: result.apiSecret, // Only shown once
+      token: result.token, // Only shown once (96 characters)
       name: result.entity.name,
       email: result.entity.email,
       description: result.entity.description || undefined,
       expiresAt: result.entity.expiresAt,
       createdAt: result.entity.createdAt,
       warning:
-        'Store these credentials securely. They will not be shown again.',
+        'Store this token securely. It will not be shown again.',
     };
   }
 

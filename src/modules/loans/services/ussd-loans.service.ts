@@ -7,7 +7,7 @@ import { Logger } from 'nestjs-pino';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, Repository } from 'typeorm';
 import { User } from '../../../entities/user.entity';
-import { Loan, LoanStatus } from '../../../entities/loan.entity';
+import { Loan, LoanStatus, Network } from '../../../entities/loan.entity';
 import {
   UssdLoanOfferRequestDto,
   UssdLoanApproveRequestDto,
@@ -345,7 +345,7 @@ export class UssdLoansService {
   private async recomputeOffersForUser(
     user: User,
     sessionId: string,
-    network?: string,
+    network: Network,
   ): Promise<UssdOfferSession> {
     const eligibleAmount =
       await this.creditScoreService.calculateEligibleLoanAmount(user.id);
@@ -540,11 +540,12 @@ export class UssdLoansService {
         outstandingAmount: amountDue,
         dueDate,
         status: LoanStatus.APPROVED,
-        network: (session.network as any) || null,
+        network: session.network as Network,
         metadata: {
           ...(session.network ? { network: session.network } : {}),
           idempotencyKey, // Store idempotency key
           loanKey, // Keep for backward compatibility
+          sessionKey, // Store sessionKey for later invalidation after disbursement
           channel: 'USSD',
         },
         telcoReference: `TELCO-REF-${Date.now()}`,
@@ -552,8 +553,8 @@ export class UssdLoansService {
 
       const saved = await this.loanRepository.save(loan);
 
-      // 7. Invalidate session to prevent reuse
-      await this.ussdSessionService.invalidateSession(sessionKey);
+      // 7. Session will be invalidated after disbursement completes (see LoanDisburseProcessor)
+      // Do not invalidate here to allow retry if disbursement fails
 
       // 8. Store idempotency key in Redis for fast lookup (5 minutes TTL)
       await this.storeIdempotencyMapping(idempotencyKey, saved.id, 300);

@@ -32,11 +32,8 @@ export class ApiKeyResponseDto {
   @ApiProperty({ description: 'API key ID' })
   id: string;
 
-  @ApiProperty({ description: 'Plain API key (only shown once)' })
-  apiKey: string;
-
-  @ApiProperty({ description: 'Plain API secret (only shown once)' })
-  apiSecret: string;
+  @ApiProperty({ description: 'Plain API token (96 characters, only shown once)' })
+  token: string;
 
   @ApiProperty({ description: 'External user name' })
   name: string;

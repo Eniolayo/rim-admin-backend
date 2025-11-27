@@ -5,7 +5,9 @@ import {
   IsString,
   IsIn,
   IsNumber,
+  IsEnum,
 } from 'class-validator';
+import { Network } from '../../../entities/loan.entity';
 
 export type UssdResponseType = 'text' | 'json';
 
@@ -20,10 +22,14 @@ export class UssdLoanOfferRequestDto {
   @IsOptional()
   sessionId?: string;
 
-  @ApiPropertyOptional({ description: 'Network identifier (e.g. mtn, airtel)' })
-  @IsString()
-  @IsOptional()
-  network?: string;
+  @ApiProperty({ 
+    description: 'Network identifier',
+    enum: Network,
+    example: Network.MTN,
+  })
+  @IsEnum(Network)
+  @IsNotEmpty()
+  network: Network;
 
   @ApiPropertyOptional({ description: 'Channel (e.g. USSD)' })
   @IsString()
@@ -86,10 +92,14 @@ export class UssdLoanApproveRequestDto {
   @IsOptional()
   selectedAmount?: number;
 
-  @ApiPropertyOptional({ description: 'Network identifier (e.g. mtn, airtel)' })
-  @IsString()
-  @IsOptional()
-  network?: string;
+  @ApiProperty({ 
+    description: 'Network identifier',
+    enum: Network,
+    example: Network.MTN,
+  })
+  @IsEnum(Network)
+  @IsNotEmpty()
+  network: Network;
 
   @ApiPropertyOptional({
     description: 'Response type, defaults to text',

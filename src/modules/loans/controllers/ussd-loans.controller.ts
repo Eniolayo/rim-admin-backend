@@ -6,7 +6,6 @@ import {
   HttpStatus,
   UseGuards,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
 import { ApiTags, ApiOperation, ApiResponse, ApiSecurity } from '@nestjs/swagger';
 import {
   UssdLoanOfferRequestDto,
@@ -14,19 +13,20 @@ import {
 } from '../dto/ussd-loan.dto';
 import { UssdLoansService } from '../services/ussd-loans.service';
 import { ApiKeyGuard } from '../../auth/guards/api-key.guard';
+import { ApiKeyRateLimitGuard } from '../../auth/guards/api-key-rate-limit.guard';
 
 @ApiTags('ussd-loans')
 @ApiSecurity('api-key')
-@Throttle({ default: { limit: 1000, ttl: 60000 } })
 @Controller('ussd')
-@UseGuards(ApiKeyGuard)
+@UseGuards(ApiKeyGuard, ApiKeyRateLimitGuard)
 export class UssdLoansController {
   constructor(private readonly ussdLoansService: UssdLoansService) {}
 
   @Post('loan-offer')
   @ApiOperation({ summary: 'USSD loan offer callback' })
   @ApiResponse({ status: 200, description: 'Loan offers returned successfully' })
-  @ApiResponse({ status: 401, description: 'Invalid API key or secret' })
+  @ApiResponse({ status: 401, description: 'Invalid API token' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded (1000 requests/minute per API key)' })
   @ApiResponse({ status: 404, description: 'User not found or not eligible' })
   @ApiResponse({ status: 400, description: 'Invalid request' })
   async loanOffer(
@@ -51,7 +51,8 @@ export class UssdLoansController {
   @Post('loan-approve')
   @ApiOperation({ summary: 'USSD loan approve callback' })
   @ApiResponse({ status: 200, description: 'Loan approved and queued for disbursement' })
-  @ApiResponse({ status: 401, description: 'Invalid API key or secret' })
+  @ApiResponse({ status: 401, description: 'Invalid API token' })
+  @ApiResponse({ status: 429, description: 'Rate limit exceeded (1000 requests/minute per API key)' })
   @ApiResponse({ status: 404, description: 'User not found or not eligible' })
   @ApiResponse({ status: 400, description: 'Invalid request' })
   async loanApprove(

@@ -6,6 +6,7 @@ import { DisburseLoanData } from '../services/loan-disburse-queue.service';
 import { AdminUser } from '../../../entities/admin-user.entity';
 import { LoanRepository } from '../repositories/loan.repository';
 import { LoanStatus } from '../../../entities/loan.entity';
+import { UssdSessionService } from '../services/ussd-session.service';
 
 @Processor('loan-disbursement', {
   concurrency: 3, // Process up to 3 disbursements in parallel
@@ -16,6 +17,7 @@ export class LoanDisburseProcessor extends WorkerHost {
   constructor(
     private readonly loansService: LoansService,
     private readonly loanRepository: LoanRepository,
+    private readonly ussdSessionService: UssdSessionService,
   ) {
     super();
   }
@@ -46,6 +48,32 @@ export class LoanDisburseProcessor extends WorkerHost {
       // loanId contains the database UUID, which disburse() can use directly
       // disburse() will handle already-disbursed loans gracefully (idempotent)
       const result = await this.loansService.disburse(loanId, systemAdmin);
+
+      // Invalidate USSD session after successful disbursement
+      // This allows retry if disbursement fails, but prevents reuse after success
+      // Only invalidate if this was a new disbursement (not already disbursed)
+      if (!wasAlreadyDisbursed && loan?.metadata && typeof loan.metadata === 'object' && 'sessionKey' in loan.metadata) {
+        const sessionKey = loan.metadata.sessionKey as string;
+        if (sessionKey) {
+          try {
+            await this.ussdSessionService.invalidateSession(sessionKey);
+            this.logger.log(
+              { loanId, sessionKey, jobId: job.id },
+              'USSD session invalidated after successful loan disbursement',
+            );
+          } catch (sessionError) {
+            // Log error but don't fail the disbursement
+            this.logger.warn(
+              {
+                error: sessionError instanceof Error ? sessionError.message : String(sessionError),
+                loanId,
+                sessionKey,
+              },
+              'Error invalidating USSD session after loan disbursement',
+            );
+          }
+        }
+      }
 
       if (wasAlreadyDisbursed) {
         this.logger.log(
