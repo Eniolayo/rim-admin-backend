@@ -1,7 +1,12 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { User, UserStatus, RepaymentStatus } from '../../../entities/user.entity';
+import {
+  User,
+  UserStatus,
+  RepaymentStatus,
+} from '../../../entities/user.entity';
+import { normalizeNigerianPhone } from '../../../common/utils/phone.utils';
 
 @Injectable()
 export class UserRepository {
@@ -13,8 +18,9 @@ export class UserRepository {
   async findById(id: string): Promise<User | null> {
     try {
       // Check if it's a UUID format (8-4-4-4-12 hex characters)
-      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-      
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
       if (uuidRegex.test(id)) {
         // It's a UUID, search by id field
         return this.repository.findOne({
@@ -30,9 +36,7 @@ export class UserRepository {
       }
     } catch (error) {
       // Log the error for debugging
-      throw new BadRequestException(
-        `Invalid user identifier format: ${id}`,
-      );
+      throw new BadRequestException(`Invalid user identifier format: ${id}`);
     }
   }
 
@@ -44,10 +48,68 @@ export class UserRepository {
   }
 
   async findByPhone(phone: string): Promise<User | null> {
-    return this.repository.findOne({
-      where: { phone },
+    // Normalize the phone number for consistent searching
+    const normalizedPhone = normalizeNigerianPhone(phone);
+
+    if (!normalizedPhone) {
+      return null;
+    }
+
+    // First, try to find with normalized phone (for newly created users)
+    let user = await this.repository.findOne({
+      where: { phone: normalizedPhone },
       relations: ['loans'],
     });
+
+    if (user) {
+      return user;
+    }
+
+    // If not found, try common variations for backward compatibility
+    // Extract digits only from normalized phone (remove leading 0)
+    const digitsOnly = normalizedPhone.replace(/\D/g, '');
+    const withoutLeadingZero = digitsOnly.startsWith('0')
+      ? digitsOnly.slice(1)
+      : digitsOnly;
+
+    // Try different formats that might exist in the database
+    const variations = [
+      `+234${withoutLeadingZero}`, // International format without spaces: +2348038381446
+      `+234 ${withoutLeadingZero.slice(0, 3)} ${withoutLeadingZero.slice(3, 6)} ${withoutLeadingZero.slice(6)}`, // International with spaces: +234 803 838 1446
+      `234${withoutLeadingZero}`, // Without +: 2348038381446
+    ];
+
+    // Try each variation
+    for (const variation of variations) {
+      user = await this.repository.findOne({
+        where: { phone: variation },
+        relations: ['loans'],
+      });
+      if (user) {
+        return user;
+      }
+    }
+
+    // Last resort: Use a query to find phones that contain the core digits
+    // This handles cases where phone might be stored with different formatting
+    if (digitsOnly.length >= 10) {
+      const localPart = digitsOnly.slice(-10); // Last 10 digits (the local number)
+      user = await this.repository
+        .createQueryBuilder('user')
+        .leftJoinAndSelect('user.loans', 'loans')
+        .where('user.phone LIKE :pattern', { pattern: `%${localPart}%` })
+        .getOne();
+
+      if (user) {
+        // Verify the normalized phone matches to ensure we found the right user
+        const userNormalizedPhone = normalizeNigerianPhone(user.phone);
+        if (userNormalizedPhone === normalizedPhone) {
+          return user;
+        }
+      }
+    }
+
+    return null;
   }
 
   async findByEmail(email: string): Promise<User | null> {
@@ -89,7 +151,9 @@ export class UserRepository {
 
       // Validate against enum values
       const validStatuses = Object.values(RepaymentStatus);
-      if (!validStatuses.includes(normalizedRepaymentStatus as RepaymentStatus)) {
+      if (
+        !validStatuses.includes(normalizedRepaymentStatus as RepaymentStatus)
+      ) {
         throw new BadRequestException(
           `Invalid repaymentStatus: "${filters.repaymentStatus}". Valid values are: ${validStatuses.join(', ')}`,
         );
@@ -155,7 +219,9 @@ export class UserRepository {
 
       // Validate against enum values
       const validStatuses = Object.values(RepaymentStatus);
-      if (!validStatuses.includes(normalizedRepaymentStatus as RepaymentStatus)) {
+      if (
+        !validStatuses.includes(normalizedRepaymentStatus as RepaymentStatus)
+      ) {
         throw new BadRequestException(
           `Invalid repaymentStatus: "${filters.repaymentStatus}". Valid values are: ${validStatuses.join(', ')}`,
         );
@@ -222,7 +288,13 @@ export class UserRepository {
     totalUsers: number;
     avgCreditScore: number;
   }> {
-    const [activeUsers, inactiveUsers, suspendedUsers, totalUsers, avgCreditScoreResult] = await Promise.all([
+    const [
+      activeUsers,
+      inactiveUsers,
+      suspendedUsers,
+      totalUsers,
+      avgCreditScoreResult,
+    ] = await Promise.all([
       this.repository.count({ where: { status: UserStatus.ACTIVE } }),
       this.repository.count({ where: { status: UserStatus.INACTIVE } }),
       this.repository.count({ where: { status: UserStatus.SUSPENDED } }),
@@ -251,7 +323,9 @@ export class UserRepository {
       suspendedUsers,
       newUsers,
       totalUsers,
-      avgCreditScore: avgCreditScoreResult?.avg ? parseFloat(avgCreditScoreResult.avg) : 0,
+      avgCreditScore: avgCreditScoreResult?.avg
+        ? parseFloat(avgCreditScoreResult.avg)
+        : 0,
     };
   }
 }

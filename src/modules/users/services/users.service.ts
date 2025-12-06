@@ -23,6 +23,7 @@ import {
 import { UsersCacheService } from './users-cache.service';
 import { CreditScoreService } from '../../credit-score/services/credit-score.service';
 import { SystemConfigService } from '../../system-config/services/system-config.service';
+import { normalizeNigerianPhone } from '../../../common/utils/phone.utils';
 
 interface CreditScoreThreshold {
   score: number;
@@ -44,24 +45,34 @@ export class UsersService {
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
     this.logger.log(`Creating new user with phone: ${createUserDto.phone}`);
 
-    // Check if a user with this phone number already exists
-    const existingUser = await this.userRepository.findByPhone(
-      createUserDto.phone,
+    // Normalize phone number to ensure consistent format
+    const normalizedPhone = normalizeNigerianPhone(createUserDto.phone);
+    if (!normalizedPhone) {
+      throw new BadRequestException(
+        `Invalid phone number format: "${createUserDto.phone}"`,
+      );
+    }
+
+    this.logger.log(
+      `Normalized phone from "${createUserDto.phone}" to "${normalizedPhone}"`,
     );
+
+    // Check if a user with this phone number already exists (using normalized phone)
+    const existingUser = await this.userRepository.findByPhone(normalizedPhone);
     if (existingUser) {
       this.logger.warn(
-        { phone: createUserDto.phone, existingUserId: existingUser.userId },
+        { phone: normalizedPhone, existingUserId: existingUser.userId },
         'Attempted to create user with duplicate phone number',
       );
       throw new BadRequestException(
-        `A user with phone number "${createUserDto.phone}" already exists. Phone numbers must be unique.`,
+        `A user with phone number "${normalizedPhone}" already exists. Phone numbers must be unique.`,
       );
     }
 
     // Generate userId
     const userId = await this.generateUserId();
     this.logger.log(`Generated userId: ${userId}`);
-    this.logger.log(`Creating user with phone: ${createUserDto.phone}`);
+    this.logger.log(`Creating user with normalized phone: ${normalizedPhone}`);
 
     // Get first-time user default credit score from system config
     let creditScore = 0;
@@ -153,6 +164,7 @@ export class UsersService {
 
     const user = this.repository.create({
       ...createUserDto,
+      phone: normalizedPhone, // Use normalized phone number
       userId,
       creditScore, // Use auto-calculated value, ignore if provided in DTO
       creditLimit, // Use auto-calculated value, ignore if provided in DTO
@@ -675,18 +687,20 @@ export class UsersService {
     const characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Excludes 0, O, I, 1 for clarity
     let suffix = '';
     for (let i = 0; i < 6; i++) {
-      suffix += characters.charAt(Math.floor(Math.random() * characters.length));
+      suffix += characters.charAt(
+        Math.floor(Math.random() * characters.length),
+      );
     }
-    
+
     const userId = `USR-${suffix}`;
-    
+
     // Ensure uniqueness
     const exists = await this.userRepository.findByUserId(userId);
     if (exists) {
       // Retry if collision (very rare)
       return this.generateUserId();
     }
-    
+
     return userId;
   }
 
