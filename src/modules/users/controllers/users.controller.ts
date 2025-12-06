@@ -18,6 +18,7 @@ import {
   ApiBearerAuth,
   ApiExtraModels,
   getSchemaPath,
+  ApiSecurity,
 } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { UsersService } from '../services/users.service';
@@ -33,13 +34,15 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { JwtOrApiKeyGuard } from '../../auth/guards/jwt-or-api-key.guard';
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
+import { ApiKeyGuard } from '../../auth/guards/api-key.guard';
+import { ApiKeyRateLimitGuard } from '../../auth/guards/api-key-rate-limit.guard';
+import { Public } from '../../auth/decorators/public.decorator';
 import { UserStatus } from '../../../entities/user.entity';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 @ApiTags('users')
 @Throttle({ default: { limit: 100, ttl: 60000 } })
 @Controller('users')
-@UseGuards(JwtAuthGuard)
 @ApiBearerAuth()
 @ApiExtraModels(PaginatedResponseDto, UserResponseDto)
 export class UsersController {
@@ -67,6 +70,38 @@ export class UsersController {
     description: 'Forbidden - Insufficient permissions',
   })
   create(@Body() createUserDto: CreateUserDto): Promise<UserResponseDto> {
+    return this.usersService.create(createUserDto);
+  }
+
+  @Post('api-key')
+  @Public()
+  @UseGuards(ApiKeyGuard, ApiKeyRateLimitGuard)
+  @ApiSecurity('api-key')
+  @ApiOperation({
+    summary: 'Create a new user (API key only)',
+    description:
+      'Creates a new user using only API key authentication. Requires x-api-token header.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'User created successfully',
+    type: UserResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Bad request - Invalid input or duplicate phone number',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing API token',
+  })
+  @ApiResponse({
+    status: 429,
+    description: 'Rate limit exceeded (1000 requests/minute per API key)',
+  })
+  createWithApiKey(
+    @Body() createUserDto: CreateUserDto,
+  ): Promise<UserResponseDto> {
     return this.usersService.create(createUserDto);
   }
 
