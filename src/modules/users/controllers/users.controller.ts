@@ -30,6 +30,7 @@ import {
   PaginatedResponseDto,
 } from '../dto';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { JwtOrApiKeyGuard } from '../../auth/guards/jwt-or-api-key.guard';
 import { PermissionsGuard } from '../../auth/guards/permissions.guard';
 import { Permissions } from '../../auth/decorators/permissions.decorator';
 import { UserStatus } from '../../../entities/user.entity';
@@ -46,8 +47,8 @@ export class UsersController {
 
   @Post()
   @Permissions('users', 'write')
-  @UseGuards(JwtAuthGuard, PermissionsGuard)
-  @ApiOperation({ summary: 'Create a new user' })
+  @UseGuards(JwtOrApiKeyGuard, PermissionsGuard)
+  @ApiOperation({ summary: 'Create a new user (accepts JWT or API key)' })
   @ApiResponse({
     status: 201,
     description: 'User created',
@@ -56,6 +57,10 @@ export class UsersController {
   @ApiResponse({
     status: 400,
     description: 'Bad request - Invalid input or duplicate phone number',
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized - Invalid or missing JWT token or API key',
   })
   @ApiResponse({
     status: 403,
@@ -176,7 +181,8 @@ export class UsersController {
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({
     summary: 'Get a user by ID',
-    description: 'Get user details by UUID or custom userId (e.g., USR-2025-002)'
+    description:
+      'Get user details by UUID or custom userId (e.g., USR-2025-002)',
   })
   @ApiResponse({
     status: 200,
@@ -185,11 +191,11 @@ export class UsersController {
   })
   @ApiResponse({
     status: 400,
-    description: 'Bad request - Invalid user ID format'
+    description: 'Bad request - Invalid user ID format',
   })
   @ApiResponse({
     status: 404,
-    description: 'User not found'
+    description: 'User not found',
   })
   @ApiResponse({
     status: 403,
@@ -333,7 +339,8 @@ export class UsersController {
   @Permissions('users', 'read')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({
-    summary: 'Get calculated interest rate for user based on credit score and interest rate tiers',
+    summary:
+      'Get calculated interest rate for user based on credit score and interest rate tiers',
   })
   @ApiResponse({
     status: 200,
@@ -359,7 +366,8 @@ export class UsersController {
   @Permissions('users', 'read')
   @UseGuards(JwtAuthGuard, PermissionsGuard)
   @ApiOperation({
-    summary: 'Get calculated repayment period for user based on credit score and repayment period options',
+    summary:
+      'Get calculated repayment period for user based on credit score and repayment period options',
   })
   @ApiResponse({
     status: 200,
