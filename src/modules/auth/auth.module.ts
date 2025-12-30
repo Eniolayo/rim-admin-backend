@@ -15,10 +15,20 @@ import { AdminController } from './controllers/admin.controller';
 import { PermissionsGuard } from './guards/permissions.guard';
 import { EmailModule } from '../email/email.module';
 import { ApiKeyModule } from './api-key.module';
+import { OAuth2Controller } from './controllers/oauth2.controller';
+import { OAuth2Service } from './services/oauth2.service';
+import { OAuth2Guard } from './guards/oauth2.guard';
+import { ApiKey } from '../../entities/api-key.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([AdminUser, AdminRole, PendingLogin, BackupCode]),
+    TypeOrmModule.forFeature([
+      AdminUser,
+      AdminRole,
+      PendingLogin,
+      BackupCode,
+      ApiKey,
+    ]),
     PassportModule,
     EmailModule,
     ApiKeyModule,
@@ -33,7 +43,7 @@ import { ApiKeyModule } from './api-key.module';
       }),
     }),
   ],
-  controllers: [AuthController, AdminController],
+  controllers: [AuthController, AdminController, OAuth2Controller],
   providers: [
     AuthService,
     AdminUserRepository,
@@ -41,6 +51,8 @@ import { ApiKeyModule } from './api-key.module';
     BackupCodeRepository,
     JwtStrategy,
     PermissionsGuard,
+    OAuth2Service,
+    OAuth2Guard,
   ],
   exports: [
     AuthService,
@@ -48,6 +60,8 @@ import { ApiKeyModule } from './api-key.module';
     PendingLoginRepository,
     BackupCodeRepository,
     PermissionsGuard,
+    OAuth2Service,
+    OAuth2Guard,
     JwtModule,
   ],
 })

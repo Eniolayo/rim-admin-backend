@@ -131,8 +131,20 @@ async function bootstrap(): Promise<void> {
 
     const config = new DocumentBuilder()
       .setTitle('RIM Admin API')
-      .setDescription('RIM Admin Backend API Documentation')
-      .setVersion('1.0')
+      .setDescription(
+        'RIM Admin Backend API Documentation - OpenAPI 3.0 Compliant\n\n' +
+          'This API supports multiple authentication methods:\n' +
+          '- **Bearer Token (JWT)**: For admin users\n' +
+          '- **API Key**: For external integrations (MNO, USSD)\n' +
+          '- **OAuth 2.0**: For third-party applications\n\n' +
+          'All APIs follow REST standards and support TLS 1.3.',
+      )
+      .setVersion('1.0.0')
+      .setContact('RIM Team', 'https://rim.ng', 'support@rim.ng')
+      .setLicense('Proprietary', 'https://rim.ng/license')
+      .addServer('https://api.rim.ng/api', 'Production Server')
+      .addServer('https://staging-api.rim.ng/api', 'Staging Server')
+      .addServer('http://localhost:3000/api', 'Development Server')
       .addTag(
         'api-keys',
         'API Keys - [Design Documentation](/api/admin-api-key-design.html)',
@@ -141,7 +153,68 @@ async function bootstrap(): Promise<void> {
         'ussd-loans',
         'USSD Loans - [Design Documentation](/api/ussd-loans-design.html)',
       )
-      .addBearerAuth()
+      .addTag('mno', 'MNO Integration APIs - For Mobile Network Operators')
+      .addTag('auth', 'Authentication - Login, JWT tokens, OAuth 2.0')
+      .addTag('admin', 'Admin Management - Users, roles, permissions')
+      .addTag('users', 'User Management - Customer data and operations')
+      .addTag('loans', 'Loan Management - Loan lifecycle operations')
+      .addTag('transactions', 'Transaction Management - Payment processing')
+      .addTag('support', 'Support System - Tickets and customer support')
+      .addTag('notifications', 'Notifications - System alerts and messages')
+      // JWT Bearer Token Authentication
+      .addBearerAuth(
+        {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'JWT token for admin user authentication',
+        },
+        'bearer',
+      )
+      // OAuth 2.0 Authentication
+      .addOAuth2(
+        {
+          type: 'oauth2',
+          flows: {
+            authorizationCode: {
+              authorizationUrl: `${configService.get<string>('FRONTEND_URL', 'http://localhost:5173')}/oauth/authorize`,
+              tokenUrl: `/${apiPrefix}/auth/oauth/token`,
+              scopes: {
+                'read:loans': 'Read loan information',
+                'write:loans': 'Create and update loans',
+                'read:users': 'Read user information',
+                'write:users': 'Create and update users',
+                'read:transactions': 'Read transaction information',
+                'write:transactions': 'Create and update transactions',
+                'admin:all': 'Full admin access',
+              },
+            },
+            clientCredentials: {
+              tokenUrl: `/${apiPrefix}/auth/oauth/token`,
+              scopes: {
+                'mno:eligibility': 'Check loan eligibility',
+                'mno:fulfillment': 'Notify loan fulfillment',
+                'mno:repayment': 'Notify loan repayment',
+                'mno:enquiry': 'Query loan information',
+              },
+            },
+          },
+          description:
+            'OAuth 2.0 authentication for third-party applications. Supports Authorization Code flow for user-facing apps and Client Credentials flow for server-to-server integrations.',
+        },
+        'oauth2',
+      )
+      // API Key Authentication
+      .addApiKey(
+        {
+          type: 'apiKey',
+          in: 'header',
+          name: 'X-API-TOKEN',
+          description:
+            'API key for external integrations (MNO, USSD). 96-character token with 30-day expiration.',
+        },
+        'api-key',
+      )
       .build();
     const document = SwaggerModule.createDocument(app, config);
     SwaggerModule.setup(`${apiPrefix}/docs`, app, document);

@@ -1,6 +1,8 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { APP_GUARD, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import * as Joi from 'joi';
@@ -48,6 +50,7 @@ import { RedisModule } from './common/redis/redis.module';
 import { SystemConfigModule } from './modules/system-config/system-config.module';
 import { CreditScoreModule } from './modules/credit-score/credit-score.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MnoModule } from './modules/mno/mno.module';
 import { MarkdownDocsService } from './common/services/markdown-docs.service';
 
 @Module({
@@ -173,6 +176,24 @@ import { MarkdownDocsService } from './common/services/markdown-docs.service';
         };
       },
     }),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const redis = configService.get('redis');
+        return {
+          connection: {
+            host: redis.host,
+            port: redis.port,
+            password: redis.password,
+            username: redis.username,
+          },
+        };
+      },
+    }),
+    PrometheusModule.register({
+      path: '/metrics',
+    }),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -198,6 +219,7 @@ import { MarkdownDocsService } from './common/services/markdown-docs.service';
     SystemConfigModule,
     CreditScoreModule,
     NotificationsModule,
+    MnoModule,
   ],
   controllers: [AppController],
   providers: [
