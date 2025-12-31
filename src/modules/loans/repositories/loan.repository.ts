@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { Loan, LoanStatus, Network } from '../../../entities/loan.entity';
 
 @Injectable()
@@ -28,6 +28,20 @@ export class LoanRepository {
     return this.repository.find({
       where: { userId },
       relations: ['user', 'approver', 'rejector'],
+      order: { createdAt: 'DESC' },
+    });
+  }
+
+  async findActiveLoansByUserId(userId: string): Promise<Loan[]> {
+    return this.repository.find({
+      where: {
+        userId,
+        status: In([
+          LoanStatus.DISBURSED,
+          LoanStatus.REPAYING,
+          LoanStatus.DEFAULTED,
+        ]),
+      },
       order: { createdAt: 'DESC' },
     });
   }

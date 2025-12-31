@@ -1,16 +1,17 @@
 import { Module, forwardRef } from '@nestjs/common';
-// BullMQ queue disabled - credit score updates now happen immediately
-// import { BullModule } from '@nestjs/bullmq';
+import { BullModule } from '@nestjs/bullmq';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { User } from '../../entities/user.entity';
 import { Loan } from '../../entities/loan.entity';
 import { Transaction } from '../../entities/transaction.entity';
 import { CreditScoreHistory } from '../../entities/credit-score-history.entity';
 import { CreditScoreService } from './services/credit-score.service';
+import { ProfilingFeedService } from './services/profiling-feed.service';
+import { CreditFeedFetcherService } from './services/credit-feed-fetcher.service';
+import { CreditFeedParserService } from './services/credit-feed-parser.service';
+import { CreditFeedBulkUpdateService } from './services/credit-feed-bulk-update.service';
 import { CreditScoreHistoryRepository } from './repositories/credit-score-history.repository';
-// Queue service and processor disabled - credit score updates now happen immediately
-// import { CreditScoreQueueService } from './services/credit-score-queue.service';
-// import { CreditScoreAwardProcessor } from './processors/credit-score-award.processor';
+import { ProfilingFeedProcessor } from './processors/profiling-feed.processor';
 import { SystemConfigModule } from '../system-config/system-config.module';
 import { UsersModule } from '../users/users.module';
 
@@ -19,15 +20,16 @@ import { UsersModule } from '../users/users.module';
     TypeOrmModule.forFeature([User, Loan, Transaction, CreditScoreHistory]),
     SystemConfigModule,
     forwardRef(() => UsersModule),
-    // BullMQ queue disabled - credit score updates now happen immediately
-    // BullModule.registerQueue({ name: 'credit-score-award' }),
+    BullModule.registerQueue({ name: 'profiling-feed' }),
   ],
   providers: [
     CreditScoreService,
+    ProfilingFeedService,
+    CreditFeedFetcherService,
+    CreditFeedParserService,
+    CreditFeedBulkUpdateService,
     CreditScoreHistoryRepository,
-    // Queue service and processor disabled - credit score updates now happen immediately
-    // CreditScoreQueueService,
-    // CreditScoreAwardProcessor,
+    ProfilingFeedProcessor,
   ],
   exports: [CreditScoreService, CreditScoreHistoryRepository],
 })

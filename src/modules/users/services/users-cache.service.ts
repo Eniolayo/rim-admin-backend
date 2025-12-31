@@ -279,5 +279,150 @@ export class UsersCacheService {
       );
     }
   }
+
+  /**
+   * Generate cache key for credit score
+   */
+  private getCreditScoreKey(userId: string): string {
+    return `${this.cachePrefix}${userId}:credit-score`;
+  }
+
+  /**
+   * Generate cache key for eligible loan amount
+   */
+  private getEligibleAmountKey(userId: string): string {
+    return `${this.cachePrefix}${userId}:eligible-amount`;
+  }
+
+  /**
+   * Get cached credit score
+   */
+  async getCachedCreditScore(userId: string): Promise<number | null> {
+    const cacheKey = this.getCreditScoreKey(userId);
+    try {
+      const cached = await this.redisService.get(cacheKey);
+      if (cached) {
+        const score = parseFloat(cached);
+        this.logger.debug(
+          { cacheKey, score, operation: 'cache_hit' },
+          'Credit score cache hit',
+        );
+        return score;
+      }
+      this.logger.debug({ cacheKey, operation: 'cache_miss' }, 'Credit score cache miss');
+      return null;
+    } catch (error) {
+      this.logger.warn(
+        { cacheKey, error: error.message, operation: 'cache_error' },
+        'Error getting credit score from cache',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Cache credit score
+   */
+  async setCachedCreditScore(
+    userId: string,
+    score: number,
+    ttl?: number,
+  ): Promise<void> {
+    const cacheKey = this.getCreditScoreKey(userId);
+    try {
+      // Use shorter TTL for credit scores (30 minutes default) as they change frequently
+      const scoreTtl = ttl || 1800; // 30 minutes
+      await this.redisService.set(cacheKey, score.toString(), scoreTtl);
+      this.logger.debug(
+        { cacheKey, score, ttl: scoreTtl, operation: 'cache_set' },
+        'Credit score cached',
+      );
+    } catch (error) {
+      this.logger.warn(
+        { cacheKey, error: error.message, operation: 'cache_error' },
+        'Error caching credit score',
+      );
+    }
+  }
+
+  /**
+   * Get cached eligible loan amount
+   */
+  async getCachedEligibleAmount(userId: string): Promise<number | null> {
+    const cacheKey = this.getEligibleAmountKey(userId);
+    try {
+      const cached = await this.redisService.get(cacheKey);
+      if (cached) {
+        const amount = parseFloat(cached);
+        this.logger.debug(
+          { cacheKey, amount, operation: 'cache_hit' },
+          'Eligible amount cache hit',
+        );
+        return amount;
+      }
+      this.logger.debug(
+        { cacheKey, operation: 'cache_miss' },
+        'Eligible amount cache miss',
+      );
+      return null;
+    } catch (error) {
+      this.logger.warn(
+        { cacheKey, error: error.message, operation: 'cache_error' },
+        'Error getting eligible amount from cache',
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Cache eligible loan amount
+   */
+  async setCachedEligibleAmount(
+    userId: string,
+    amount: number,
+    ttl?: number,
+  ): Promise<void> {
+    const cacheKey = this.getEligibleAmountKey(userId);
+    try {
+      // Use 1 hour TTL for eligible amounts (default)
+      const amountTtl = ttl || 3600;
+      await this.redisService.set(cacheKey, amount.toString(), amountTtl);
+      this.logger.debug(
+        { cacheKey, amount, ttl: amountTtl, operation: 'cache_set' },
+        'Eligible amount cached',
+      );
+    } catch (error) {
+      this.logger.warn(
+        { cacheKey, error: error.message, operation: 'cache_error' },
+        'Error caching eligible amount',
+      );
+    }
+  }
+
+  /**
+   * Invalidate all user-related cache (user data, credit score, eligible amount)
+   */
+  async invalidateUserCache(userId: string): Promise<void> {
+    const keys = [
+      this.getUserKey(userId),
+      this.getCreditScoreKey(userId),
+      this.getEligibleAmountKey(userId),
+    ];
+
+    try {
+      for (const key of keys) {
+        await this.redisService.del(key);
+      }
+      this.logger.debug(
+        { userId, keys, operation: 'cache_invalidate' },
+        'User cache invalidated',
+      );
+    } catch (error) {
+      this.logger.warn(
+        { userId, error: error.message, operation: 'cache_error' },
+        'Error invalidating user cache',
+      );
+    }
+  }
 }
 

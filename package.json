@@ -46,9 +46,22 @@
     "seed:support": "ts-node -r tsconfig-paths/register src/database/seeds/support.seed.ts",
     "seed:support:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run seed:support",
     "script:delete-support-agents": "ts-node -r tsconfig-paths/register src/database/scripts/delete-support-agents.ts",
-    "script:delete-support-agents:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run script:delete-support-agents"
+    "script:delete-support-agents:docker:dev": "docker-compose -f docker-compose.dev.yml exec app npm run script:delete-support-agents",
+    "perf:get-token": "node test/performance/get-token.js",
+    "perf:load:k6": "k6 run test/performance/credit-eligibility-stress.k6.js",
+    "perf:stress:k6": "k6 run test/performance/credit-eligibility-stress.k6.js",
+    "perf:soak:k6": "k6 run test/performance/soak-test.k6.js",
+    "perf:spike:k6": "k6 run test/performance/spike-test.k6.js",
+    "perf:mixed:k6": "k6 run test/performance/mixed-workload.k6.js",
+    "perf:load:artillery": "artillery run test/performance/artillery-load.yml --output test-results/artillery-load.json",
+    "perf:stress:artillery": "artillery run test/performance/artillery-stress.yml --output test-results/artillery-stress.json",
+    "perf:soak:artillery": "artillery run test/performance/artillery-soak.yml --output test-results/artillery-soak.json",
+    "perf:report:artillery": "artillery report test-results/artillery-*.json",
+    "perf:validate": "node test/performance/validate-setup.js",
+    "perf:smoke": "node test/performance/smoke-test.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.958.0",
     "@nestjs/bullmq": "^11.0.4",
     "@nestjs/common": "^11.0.1",
     "@nestjs/config": "^3.2.0",
@@ -63,6 +76,7 @@
     "@nestjs/websockets": "^11.1.9",
     "@types/ioredis": "^4.28.10",
     "@types/nodemailer": "^7.0.4",
+    "@willsoto/nestjs-prometheus": "^6.0.2",
     "bcrypt": "^5.1.1",
     "bullmq": "^5.63.2",
     "class-transformer": "^0.5.1",
@@ -79,6 +93,7 @@
     "pino": "^9.3.0",
     "pino-http": "^10.0.0",
     "pino-pretty": "^11.2.2",
+    "prom-client": "^15.1.3",
     "qrcode": "^1.5.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
@@ -113,7 +128,8 @@
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.7.3",
-    "typescript-eslint": "^8.20.0"
+    "typescript-eslint": "^8.20.0",
+    "dotenv": "^16.4.5"
   },
   "jest": {
     "moduleFileExtensions": [

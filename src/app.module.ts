@@ -1,6 +1,8 @@
 import { Module, ValidationPipe } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
+import { PrometheusModule } from '@willsoto/nestjs-prometheus';
 import { APP_GUARD, APP_PIPE, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import * as Joi from 'joi';
@@ -45,10 +47,13 @@ import { TransactionsModule } from './modules/transactions/transactions.module';
 import { SupportModule } from './modules/support/support.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { RedisModule } from './common/redis/redis.module';
+import { CommonModule } from './common/common.module';
 import { SystemConfigModule } from './modules/system-config/system-config.module';
 import { CreditScoreModule } from './modules/credit-score/credit-score.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MnoModule } from './modules/mno/mno.module';
 import { MarkdownDocsService } from './common/services/markdown-docs.service';
+import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
 
 @Module({
   imports: [
@@ -173,6 +178,24 @@ import { MarkdownDocsService } from './common/services/markdown-docs.service';
         };
       },
     }),
+    BullModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const redis = configService.get('redis');
+        return {
+          connection: {
+            host: redis.host,
+            port: redis.port,
+            password: redis.password,
+            username: redis.username,
+          },
+        };
+      },
+    }),
+    PrometheusModule.register({
+      path: '/metrics',
+    }),
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -188,6 +211,7 @@ import { MarkdownDocsService } from './common/services/markdown-docs.service';
     }),
     LoggerModule,
     RedisModule,
+    CommonModule,
     AuthModule,
     UsersModule,
     LoansModule,
@@ -198,6 +222,7 @@ import { MarkdownDocsService } from './common/services/markdown-docs.service';
     SystemConfigModule,
     CreditScoreModule,
     NotificationsModule,
+    MnoModule,
   ],
   controllers: [AppController],
   providers: [
@@ -230,6 +255,10 @@ import { MarkdownDocsService } from './common/services/markdown-docs.service';
     {
       provide: APP_INTERCEPTOR,
       useClass: ActivityLogInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: PerformanceInterceptor,
     },
   ],
 })

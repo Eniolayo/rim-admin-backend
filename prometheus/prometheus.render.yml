@@ -1,0 +1,32 @@
+# Prometheus Configuration for Render Deployment
+# This file is specifically configured for the Render hosting environment
+
+global:
+  scrape_interval: 15s      # How frequently to scrape targets
+  evaluation_interval: 30s  # How frequently to evaluate alert rules
+  external_labels:
+    environment: production
+    service: rim-backend
+
+# Alert rules configuration
+rule_files:
+  - /etc/prometheus/alerts/*.yml
+
+# Scrape configurations
+scrape_configs:
+  # Scrape metrics from the RIM Admin Backend API
+  - job_name: 'rim-backend'
+    metrics_path: '/api/metrics'  # Updated path for Render deployment
+    scheme: https                 # Use HTTPS for Render
+    static_configs:
+      - targets: ['rim-admin-backend.onrender.com']
+        labels:
+          service: rim-backend
+          environment: production
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    # Optional: Add basic auth if your metrics endpoint is protected
+    # basic_auth:
+    #   username: 'your-username'
+    #   password: 'your-password'
+

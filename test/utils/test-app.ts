@@ -39,7 +39,7 @@ export async function initTestApp(): Promise<TestApp> {
   // These match the defaults in docker-compose.dev.yml
   if (!process.env.DB_USERNAME) process.env.DB_USERNAME = 'postgres'
   if (!process.env.DB_PASSWORD) process.env.DB_PASSWORD = 'postgres'
-  if (!process.env.DB_NAME) process.env.DB_NAME = 'rim_db_dev'
+  if (!process.env.DB_NAME) process.env.DB_NAME = 'rim_db_test'
   if (!process.env.DB_PORT) process.env.DB_PORT = '5432'
   if (!process.env.REDIS_PORT) process.env.REDIS_PORT = '6379'
   if (!process.env.JWT_SECRET) process.env.JWT_SECRET = 'dev-jwt-secret-key-min-32-chars-long'
@@ -52,7 +52,7 @@ export async function initTestApp(): Promise<TestApp> {
   const { runSeed: runAdminSeed } = require('../../src/database/seeds/admin.seed')
 
   try {
-    // Create test-specific data source to avoid conflicts
+    // Create test-specific data source for migrations and seeding
     const { dataSourceOptions } = require('../../src/database/data-source')
     const testDataSource = new DataSource({
       ...dataSourceOptions,
@@ -65,6 +65,9 @@ export async function initTestApp(): Promise<TestApp> {
       await testDataSource.runMigrations()
     }
 
+    // Wait a bit to ensure connection is stable
+    await new Promise(resolve => setTimeout(resolve, 100))
+
     await runAdminSeed(testDataSource)
 
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -74,7 +77,30 @@ export async function initTestApp(): Promise<TestApp> {
     const app = moduleFixture.createNestApplication()
     await app.init()
 
-    return { app, httpServer: app.getHttpServer(), dataSource: testDataSource }
+    // Wait for app to fully initialize
+    await new Promise(resolve => setTimeout(resolve, 200))
+
+    // Get DataSource from the NestJS app (TypeORM creates its own connection)
+    // This is more reliable than using the test DataSource which might get closed
+    let appDataSource: DataSource | undefined
+    try {
+      appDataSource = app.get(DataSource)
+    } catch (error) {
+      // If we can't get it from app, use the test DataSource
+      console.warn('Could not get DataSource from app, using test DataSource')
+      appDataSource = testDataSource.isInitialized ? testDataSource : undefined
+    }
+
+    // If app DataSource is not available or not initialized, use test DataSource
+    if (!appDataSource || !appDataSource.isInitialized) {
+      if (testDataSource.isInitialized) {
+        appDataSource = testDataSource
+      } else {
+        throw new Error('No initialized DataSource available')
+      }
+    }
+
+    return { app, httpServer: app.getHttpServer(), dataSource: appDataSource }
   } catch (error) {
     console.error('Failed to initialize test app:', error)
     throw error

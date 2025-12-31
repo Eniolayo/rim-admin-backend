@@ -1,0 +1,83 @@
+groups:
+  - name: rim_backend_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_request_errors_total[5m])) 
+            / 
+            sum(rate(http_requests_total[5m]))
+          ) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: rim-backend
+        annotations:
+          summary: "High error rate detected in RIM backend"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      - alert: VeryHighErrorRate
+        expr: |
+          (
+            sum(rate(http_request_errors_total[5m])) 
+            / 
+            sum(rate(http_requests_total[5m]))
+          ) * 100 > 10
+        for: 2m
+        labels:
+          severity: critical
+          service: rim-backend
+        annotations:
+          summary: "Very high error rate detected in RIM backend"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      - alert: SlowResponseTime
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route)
+          ) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          service: rim-backend
+        annotations:
+          summary: "95th percentile latency exceeds 500ms"
+          description: "95th percentile response time is {{ $value }}s for route {{ $labels.route }}"
+
+      - alert: VerySlowResponseTime
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route)
+          ) > 1.0
+        for: 2m
+        labels:
+          severity: critical
+          service: rim-backend
+        annotations:
+          summary: "95th percentile latency exceeds 1s"
+          description: "95th percentile response time is {{ $value }}s for route {{ $labels.route }}"
+
+      - alert: HighSlowRequestRate
+        expr: |
+          rate(http_slow_requests_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: rim-backend
+        annotations:
+          summary: "High rate of slow requests (>200ms)"
+          description: "Slow request rate is {{ $value }} requests/sec (threshold: 10 req/s)"
+
+      - alert: NoRequestsReceived
+        expr: |
+          sum(rate(http_requests_total[5m])) == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: rim-backend
+        annotations:
+          summary: "No requests received in the last 10 minutes"
+          description: "The application appears to be down or not receiving traffic"
+
+

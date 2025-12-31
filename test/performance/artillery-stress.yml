@@ -1,0 +1,66 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 120
+      arrivalRate: 100
+      name: "Baseline"
+    - duration: 120
+      arrivalRate: 200
+      name: "Increase 1"
+    - duration: 120
+      arrivalRate: 300
+      name: "Target load"
+    - duration: 120
+      arrivalRate: 400
+      name: "Stress 1"
+    - duration: 120
+      arrivalRate: 500
+      name: "Stress 2"
+    - duration: 120
+      arrivalRate: 600
+      name: "Stress 3 - Breaking point"
+    - duration: 60
+      arrivalRate: 100
+      name: "Recovery"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer {{ $processEnvironment.JWT_TOKEN }}"
+  processor: "./test/performance/artillery-processor.js"
+  plugins:
+    expect: {}
+    metrics-by-endpoint:
+      stripQueryString: true
+  payload:
+    userIds:
+      path: "./test/performance/user-ids.json"
+      fields:
+        - "userId"
+scenarios:
+  - name: "Credit eligibility stress"
+    weight: 60
+    flow:
+      - function: "generateUserId"
+      - get:
+          url: "/api/users/{{ userId }}/eligible-loan-amount"
+          expect:
+            - statusCode: 200
+            - maxResponseTime: 200
+      - think: 0.5
+  - name: "Mixed workload"
+    weight: 40
+    flow:
+      - function: "generateUserId"
+      - get:
+          url: "/api/users/{{ userId }}/eligible-loan-amount"
+          expect:
+            - statusCode: 200
+      - think: 0.5
+      - get:
+          url: "/api/users/stats"
+          expect:
+            - statusCode: 200
+      - think: 0.5
+
+
+

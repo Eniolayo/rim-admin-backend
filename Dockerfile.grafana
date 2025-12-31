@@ -1,0 +1,32 @@
+# Grafana Dockerfile for Render Deployment
+FROM grafana/grafana:latest
+
+# Copy Grafana provisioning configurations
+# This includes datasources and dashboards
+COPY grafana/provisioning /etc/grafana/provisioning
+
+# Expose Grafana port
+EXPOSE 3000
+
+# Set Grafana environment variables
+# GF_SERVER_HTTP_PORT will be set via environment variable in Render
+# GF_SECURITY_ADMIN_PASSWORD should be set in Render's environment variables
+# GF_SERVER_ROOT_URL will be automatically set by Render
+
+# Default admin user (can be overridden via environment variables)
+ENV GF_SECURITY_ADMIN_USER=admin
+
+# Allow anonymous access to dashboards (optional, can be disabled)
+ENV GF_AUTH_ANONYMOUS_ENABLED=false
+
+# Create entrypoint script to handle dynamic port
+RUN echo '#!/bin/sh\n\
+if [ -n "$PORT" ]; then\n\
+  export GF_SERVER_HTTP_PORT="$PORT"\n\
+fi\n\
+exec grafana-server run' > /entrypoint.sh && \
+    chmod +x /entrypoint.sh
+
+# Run Grafana via entrypoint script
+ENTRYPOINT ["/entrypoint.sh"]
+

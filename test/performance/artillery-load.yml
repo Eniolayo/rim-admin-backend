@@ -1,0 +1,76 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 60   # 1 minute warm-up
+      arrivalRate: 25
+      name: "Warm-up phase"
+    - duration: 300  # 5 minutes
+      arrivalRate: 50  # 50 requests/second
+      name: "Normal load"
+    - duration: 300  # 5 minutes
+      arrivalRate: 100  # 100 requests/second
+      name: "Increased load"
+    - duration: 300  # 5 minutes
+      arrivalRate: 200  # 200 requests/second
+      name: "High load"
+    - duration: 300  # 5 minutes
+      arrivalRate: 300  # Target: 300 TPS
+      name: "Peak load"
+    - duration: 60   # 1 minute cool-down
+      arrivalRate: 50
+      name: "Cool-down"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer {{ $processEnvironment.JWT_TOKEN }}"
+  processor: "./test/performance/artillery-processor.js"
+  plugins:
+    expect: {}
+  payload:
+    userIds:
+      path: "./test/performance/user-ids.json"
+      fields:
+        - "userId"
+scenarios:
+  - name: "Credit eligibility check"
+    weight: 50
+    flow:
+      - function: "generateUserId"
+      - get:
+          url: "/api/users/{{ userId }}/eligible-loan-amount"
+          capture:
+            - json: "$.eligibleAmount"
+              as: "eligibleAmount"
+          expect:
+            - statusCode: 200
+            - contentType: json
+            - hasProperty: eligibleAmount
+      - think: 1
+  - name: "User stats"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/users/stats"
+          expect:
+            - statusCode: 200
+      - think: 1
+  - name: "Loan stats"
+    weight: 20
+    flow:
+      - get:
+          url: "/api/loans/stats"
+          expect:
+            - statusCode: 200
+      - think: 1
+  - name: "Get user details"
+    weight: 10
+    flow:
+      - function: "generateUserId"
+      - get:
+          url: "/api/users/{{ userId }}"
+          expect:
+            - statusCode: 200
+      - think: 1
+
+
+
