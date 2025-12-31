@@ -5,9 +5,12 @@ FROM grafana/grafana:latest
 # This includes datasources and dashboards
 COPY grafana/provisioning /etc/grafana/provisioning
 
-# Copy entrypoint script
-COPY grafana/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Create entrypoint script inline (more reliable than COPY for Render)
+RUN echo '#!/bin/sh' > /entrypoint.sh && \
+    echo 'if [ -n "$PORT" ]; then export GF_SERVER_HTTP_PORT="$PORT"; fi' >> /entrypoint.sh && \
+    echo 'if [ -n "$PROMETHEUS_URL" ]; then sed -i "s|https://YOUR_PROMETHEUS_SERVICE_URL_HERE.onrender.com|$PROMETHEUS_URL|g" /etc/grafana/provisioning/datasources/prometheus.render.yml; fi' >> /entrypoint.sh && \
+    echo 'exec grafana-server run' >> /entrypoint.sh && \
+    chmod +x /entrypoint.sh
 
 # Expose Grafana port
 EXPOSE 3000
