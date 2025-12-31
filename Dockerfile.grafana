@@ -5,9 +5,8 @@ FROM grafana/grafana:latest
 # This includes datasources and dashboards
 COPY grafana/provisioning /etc/grafana/provisioning
 
-# Copy and set up entrypoint script (use custom name to avoid conflicts)
-COPY grafana/entrypoint.sh /custom-entrypoint.sh
-RUN test -f /custom-entrypoint.sh && chmod +x /custom-entrypoint.sh || (echo "Entrypoint script not found" && exit 1)
+# Copy entrypoint script WITH execute permission (avoids chmod which requires root)
+COPY --chmod=755 grafana/entrypoint.sh /custom-entrypoint.sh
 
 # Expose Grafana port
 EXPOSE 3000
