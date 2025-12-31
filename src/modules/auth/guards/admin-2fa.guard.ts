@@ -8,13 +8,21 @@ export class AdminTwoFactorGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
+    const req = context.switchToHttp().getRequest();
+    const path = req.path;
+
+    // Skip 2FA check for Prometheus metrics endpoint
+    // This allows Prometheus to scrape metrics without authentication
+    if (path === '/api/metrics' || path === '/metrics') {
+      return true;
+    }
+
     const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
     if (isPublic) return true;
 
-    const req = context.switchToHttp().getRequest();
     const user: AdminUser | undefined = req.user;
     if (!user) return false;
 
