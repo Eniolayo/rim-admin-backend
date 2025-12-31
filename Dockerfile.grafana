@@ -5,9 +5,9 @@ FROM grafana/grafana:latest
 # This includes datasources and dashboards
 COPY grafana/provisioning /etc/grafana/provisioning
 
-# Copy and set up entrypoint script
-COPY grafana/entrypoint.sh /tmp/entrypoint.sh
-RUN mv /tmp/entrypoint.sh /entrypoint.sh && chmod +x /entrypoint.sh
+# Copy and set up entrypoint script (use custom name to avoid conflicts)
+COPY grafana/entrypoint.sh /custom-entrypoint.sh
+RUN test -f /custom-entrypoint.sh && chmod +x /custom-entrypoint.sh || (echo "Entrypoint script not found" && exit 1)
 
 # Expose Grafana port
 EXPOSE 3000
@@ -23,6 +23,5 @@ ENV GF_SECURITY_ADMIN_USER=admin
 # Allow anonymous access to dashboards (optional, can be disabled)
 ENV GF_AUTH_ANONYMOUS_ENABLED=false
 
-# Run Grafana via entrypoint script
-ENTRYPOINT ["/entrypoint.sh"]
-
+# Run Grafana via custom entrypoint script
+ENTRYPOINT ["/custom-entrypoint.sh"]
