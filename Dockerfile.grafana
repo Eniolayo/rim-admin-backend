@@ -5,6 +5,10 @@ FROM grafana/grafana:latest
 # This includes datasources and dashboards
 COPY grafana/provisioning /etc/grafana/provisioning
 
+# Copy entrypoint script
+COPY grafana/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Expose Grafana port
 EXPOSE 3000
 
@@ -18,21 +22,6 @@ ENV GF_SECURITY_ADMIN_USER=admin
 
 # Allow anonymous access to dashboards (optional, can be disabled)
 ENV GF_AUTH_ANONYMOUS_ENABLED=false
-
-# Create entrypoint script to handle dynamic port and Prometheus URL
-RUN cat > /entrypoint.sh << 'EOF'
-#!/bin/sh
-# Handle dynamic port
-if [ -n "$PORT" ]; then
-  export GF_SERVER_HTTP_PORT="$PORT"
-fi
-# Replace Prometheus URL in datasource config if environment variable is set
-if [ -n "$PROMETHEUS_URL" ]; then
-  sed -i "s|https://YOUR_PROMETHEUS_SERVICE_URL_HERE.onrender.com|$PROMETHEUS_URL|g" /etc/grafana/provisioning/datasources/prometheus.render.yml
-fi
-exec grafana-server run
-EOF
-RUN chmod +x /entrypoint.sh
 
 # Run Grafana via entrypoint script
 ENTRYPOINT ["/entrypoint.sh"]
