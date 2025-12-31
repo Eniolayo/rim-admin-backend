@@ -208,10 +208,10 @@ export class CreditScoreService {
     if (points <= 0) {
       // Even if no points awarded, still save user to persist totalRepaid and repaymentStatus update
       await this.userRepository.save(user);
-      // Invalidate user cache since totalRepaid and repaymentStatus were updated
+      // Invalidate all user-related cache
       try {
         await Promise.all([
-          this.usersCacheService.invalidateUser(user.id),
+          this.usersCacheService.invalidateUserCache(user.id),
           this.usersCacheService.invalidateUserList(),
           this.usersCacheService.invalidateUserStats(),
         ]);
@@ -283,10 +283,10 @@ export class CreditScoreService {
 
     await this.userRepository.save(user);
 
-    // Invalidate user cache since creditScore, totalRepaid, repaymentStatus, and possibly creditLimit were updated
+    // Invalidate all user-related cache (user data, credit score, eligible amount)
     try {
       await Promise.all([
-        this.usersCacheService.invalidateUser(user.id),
+        this.usersCacheService.invalidateUserCache(user.id),
         this.usersCacheService.invalidateUserList(),
         this.usersCacheService.invalidateUserStats(),
       ]);
@@ -392,6 +392,18 @@ export class CreditScoreService {
   async calculateEligibleLoanAmount(userId: string): Promise<number> {
     this.logger.debug({ userId }, 'Calculating eligible loan amount');
 
+    // Check cache first
+    const cachedAmount = await this.usersCacheService.getCachedEligibleAmount(
+      userId,
+    );
+    if (cachedAmount !== null) {
+      this.logger.debug(
+        { userId, cachedAmount },
+        'Returning cached eligible loan amount',
+      );
+      return cachedAmount;
+    }
+
     const user = await this.userRepository.findOne({
       where: { id: userId },
     });
@@ -448,6 +460,9 @@ export class CreditScoreService {
       },
       'Calculated eligible loan amount (after subtracting outstanding debt)',
     );
+
+    // Cache the result (TTL: 1 hour)
+    await this.usersCacheService.setCachedEligibleAmount(userId, eligibleAmount, 3600);
 
     return eligibleAmount;
   }

@@ -5,7 +5,8 @@ import {
   ApiResponse,
   ApiBody,
 } from '@nestjs/swagger';
-import { OAuth2Service, OAuth2TokenRequest, OAuth2TokenResponse } from '../services/oauth2.service';
+import { OAuth2Service } from '../services/oauth2.service';
+import type { OAuth2TokenRequest, OAuth2TokenResponse } from '../services/oauth2.service';
 import { Public } from '../decorators/public.decorator';
 
 @ApiTags('auth')

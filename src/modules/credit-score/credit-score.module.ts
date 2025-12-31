@@ -7,6 +7,9 @@ import { Transaction } from '../../entities/transaction.entity';
 import { CreditScoreHistory } from '../../entities/credit-score-history.entity';
 import { CreditScoreService } from './services/credit-score.service';
 import { ProfilingFeedService } from './services/profiling-feed.service';
+import { CreditFeedFetcherService } from './services/credit-feed-fetcher.service';
+import { CreditFeedParserService } from './services/credit-feed-parser.service';
+import { CreditFeedBulkUpdateService } from './services/credit-feed-bulk-update.service';
 import { CreditScoreHistoryRepository } from './repositories/credit-score-history.repository';
 import { ProfilingFeedProcessor } from './processors/profiling-feed.processor';
 import { SystemConfigModule } from '../system-config/system-config.module';
@@ -22,6 +25,9 @@ import { UsersModule } from '../users/users.module';
   providers: [
     CreditScoreService,
     ProfilingFeedService,
+    CreditFeedFetcherService,
+    CreditFeedParserService,
+    CreditFeedBulkUpdateService,
     CreditScoreHistoryRepository,
     ProfilingFeedProcessor,
   ],

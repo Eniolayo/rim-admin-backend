@@ -1,0 +1,25 @@
+# Grafana Datasource Configuration for Render Deployment
+# This file configures Prometheus as a datasource in Grafana
+# IMPORTANT: Update the URL below with your actual Prometheus service URL after deployment
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    # TODO: Replace this URL with your actual Prometheus service URL from Render
+    # Example: https://your-prometheus-service.onrender.com
+    # The URL should NOT include the /api/v1/query path - Grafana adds that automatically
+    url: https://YOUR_PROMETHEUS_SERVICE_URL_HERE.onrender.com
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 15s
+      httpMethod: POST
+      # Optional: If your Prometheus requires authentication
+      # basicAuth: true
+      # basicAuthUser: 'your-username'
+      # secureJsonData:
+      #   basicAuthPassword: 'your-password'
+

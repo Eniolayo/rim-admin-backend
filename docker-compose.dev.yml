@@ -92,6 +92,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./test/performance/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alerts:/etc/prometheus/alerts
       - prometheus_dev_data:/prometheus
     ports:
       - '9090:9090'
@@ -104,8 +105,12 @@ services:
     restart: unless-stopped
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=admin
     ports:
       - '3001:3000'
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana_dev_data:/var/lib/grafana
     networks:
       - rim-network-dev
 
@@ -113,6 +118,7 @@ volumes:
   postgres_dev_data:
   redis_dev_data:
   prometheus_dev_data:
+  grafana_dev_data:
 
 networks:
   rim-network-dev:

@@ -82,4 +82,29 @@ export class AdminActivityLogRepository {
     );
     return this.repository.save(logs);
   }
+
+  // Protection methods to prevent modifications for audit integrity
+  async update(id: string, data: Partial<AdminActivityLog>): Promise<never> {
+    throw new Error(
+      'Updates to admin activity logs are not allowed for audit integrity. Logs are append-only.',
+    );
+  }
+
+  async delete(id: string): Promise<never> {
+    throw new Error(
+      'Deletes of admin activity logs are not allowed for audit integrity. Logs are append-only.',
+    );
+  }
+
+  async remove(entity: AdminActivityLog): Promise<never> {
+    throw new Error(
+      'Removal of admin activity logs is not allowed for audit integrity. Logs are append-only.',
+    );
+  }
+
+  async softDelete(id: string): Promise<never> {
+    throw new Error(
+      'Soft deletes of admin activity logs are not allowed for audit integrity. Logs are append-only.',
+    );
+  }
 }

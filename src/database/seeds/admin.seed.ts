@@ -54,8 +54,8 @@ const rolesToSeed: RoleSeedData[] = [
 
 const usersToSeed: UserSeedData[] = [
   {
-    username: 'superadmin33',
-    email: 'superadmin33@test33.com',
+    username: 'superAdminFrost',
+    email: 'superadminfrost@test33.com',
     roleName: 'super_Admin',
   },
 ];
@@ -120,6 +120,13 @@ async function seedAdminUsers(roleMap: Map<string, AdminRole>, dataSourceToUse: 
       console.log(
         `  ⏭️  User already exists: ${userData.email} (${userData.username})`,
       );
+      // In test mode, reset MFA to ensure tests can login
+      if (process.env.NODE_ENV === 'test' && existingUser.twoFactorEnabled) {
+        console.log(`  🔄 Resetting MFA for test user: ${userData.email}`);
+        existingUser.twoFactorEnabled = false;
+        existingUser.otpSecret = null;
+        await userRepository.save(existingUser);
+      }
       skippedCount++;
       continue;
     }

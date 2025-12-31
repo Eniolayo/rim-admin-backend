@@ -1,6 +1,16 @@
 // Jest setup for E2E tests
 jest.setTimeout(30000);
 
+// Mock marked module to avoid ESM import issues in tests
+jest.mock('marked', () => {
+  const mockMarked = jest.fn((markdown: string) => `<p>${markdown}</p>`);
+  mockMarked.setOptions = jest.fn();
+  mockMarked.getDefaults = jest.fn(() => ({}));
+  return {
+    marked: mockMarked,
+  };
+});
+
 // Store original console methods
 let originalConsoleLog: typeof console.log;
 let originalConsoleError: typeof console.error;

@@ -36,4 +36,29 @@ export class CreditScoreHistoryRepository {
       order: { createdAt: 'DESC' },
     });
   }
+
+  // Protection methods to prevent modifications for audit integrity
+  async update(id: string, data: Partial<CreditScoreHistory>): Promise<never> {
+    throw new Error(
+      'Updates to credit score history are not allowed for audit integrity. History records are append-only.',
+    );
+  }
+
+  async delete(id: string): Promise<never> {
+    throw new Error(
+      'Deletes of credit score history are not allowed for audit integrity. History records are append-only.',
+    );
+  }
+
+  async remove(entity: CreditScoreHistory): Promise<never> {
+    throw new Error(
+      'Removal of credit score history is not allowed for audit integrity. History records are append-only.',
+    );
+  }
+
+  async softDelete(id: string): Promise<never> {
+    throw new Error(
+      'Soft deletes of credit score history are not allowed for audit integrity. History records are append-only.',
+    );
+  }
 }

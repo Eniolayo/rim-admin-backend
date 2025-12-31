@@ -137,6 +137,46 @@ export class RedisService implements OnModuleDestroy {
     return this.redisClient.status === 'ready';
   }
 
+  /**
+   * Add member to sorted set
+   */
+  async zadd(
+    key: string,
+    score: number | string,
+    member: string,
+  ): Promise<number> {
+    return await this.redisClient.zadd(key, score, member);
+  }
+
+  /**
+   * Get range from sorted set
+   */
+  async zrange(
+    key: string,
+    start: number,
+    stop: number,
+    withScores?: 'WITHSCORES',
+  ): Promise<string[]> {
+    if (withScores === 'WITHSCORES') {
+      return await this.redisClient.zrange(key, start, stop, 'WITHSCORES');
+    }
+    return await this.redisClient.zrange(key, start, stop);
+  }
+
+  /**
+   * Get cardinality of sorted set
+   */
+  async zcard(key: string): Promise<number> {
+    return await this.redisClient.zcard(key);
+  }
+
+  /**
+   * Remove range from sorted set by rank
+   */
+  async zremrangebyrank(key: string, start: number, stop: number): Promise<number> {
+    return await this.redisClient.zremrangebyrank(key, start, stop);
+  }
+
   async onModuleDestroy(): Promise<void> {
     if (this.redisClient.status === 'ready') {
       await this.redisClient.quit();

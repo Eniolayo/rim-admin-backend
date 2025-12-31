@@ -1,0 +1,50 @@
+config:
+  target: "http://localhost:3000"
+  phases:
+    - duration: 14400  # 4 hours
+      arrivalRate: 210  # 70% of 300 TPS target
+      name: "Sustained load"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer {{ $processEnvironment.JWT_TOKEN }}"
+  processor: "./test/performance/artillery-processor.js"
+  plugins:
+    expect: {}
+    metrics-by-endpoint:
+      stripQueryString: true
+  payload:
+    userIds:
+      path: "./test/performance/user-ids.json"
+      fields:
+        - "userId"
+scenarios:
+  - name: "Credit eligibility soak"
+    weight: 70
+    flow:
+      - function: "generateUserId"
+      - get:
+          url: "/api/users/{{ userId }}/eligible-loan-amount"
+          expect:
+            - statusCode: 200
+            - maxResponseTime: 200
+      - think: 1
+  - name: "User stats"
+    weight: 15
+    flow:
+      - get:
+          url: "/api/users/stats"
+          expect:
+            - statusCode: 200
+      - think: 2
+  - name: "Loan stats"
+    weight: 15
+    flow:
+      - get:
+          url: "/api/loans/stats"
+          expect:
+            - statusCode: 200
+      - think: 2
+
+
+
