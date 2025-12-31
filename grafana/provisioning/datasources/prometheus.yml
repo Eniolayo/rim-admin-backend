@@ -5,7 +5,7 @@ datasources:
     type: prometheus
     access: proxy
     url: http://prometheus:9090
-    isDefault: true
+    isDefault: false  # Set to false to avoid conflicts with prometheus.render.yml
     editable: false
     jsonData:
       timeInterval: 15s
