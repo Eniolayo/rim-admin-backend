@@ -52,15 +52,17 @@ export class ApiKeyService {
     }
 
     // Check if email already has any API key (revoked/inactive)
-    // The database has a UNIQUE constraint on email, so we need to check
-    // for any existing key to avoid constraint violations
+    // The database has a UNIQUE constraint on email, so we need to delete
+    // any existing revoked/inactive keys before creating a new one
     const existingKey = await this.apiKeyRepository.findOne({
       where: { email },
     });
 
     if (existingKey) {
-      throw new BadRequestException(
-        `An API key already exists for email: ${email} (status: ${existingKey.status}). Please revoke the existing key first if you want to create a new one.`,
+      // Delete the existing revoked/inactive key to allow creating a new one
+      await this.apiKeyRepository.remove(existingKey);
+      this.logger.log(
+        `Deleted existing ${existingKey.status} API key for email: ${email} (ID: ${existingKey.id}) before creating new one`,
       );
     }
 
