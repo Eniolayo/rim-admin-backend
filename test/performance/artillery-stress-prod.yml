@@ -1,0 +1,89 @@
+config:
+  # PRODUCTION TARGET URL - Update with your actual production URL
+  target: "https://rim-admin-backend.onrender.com"
+  
+  # Conservative phases for production stress testing
+  # Start slow and gradually increase to avoid sudden spikes
+  phases:
+    # Phase 1: Warm-up (very conservative start)
+    - duration: 60   # 1 minute
+      arrivalRate: 10  # 10 requests/second
+      name: "Warm-up phase"
+    
+    # Phase 2: Light load (normal operation level)
+    - duration: 120  # 2 minutes
+      arrivalRate: 50  # 50 requests/second
+      name: "Light load"
+    
+    # Phase 3: Moderate load (higher but sustainable)
+    - duration: 120  # 2 minutes
+      arrivalRate: 100  # 100 requests/second
+      name: "Moderate load"
+    
+    # Phase 4: Target load (near target capacity)
+    - duration: 120  # 2 minutes
+      arrivalRate: 200  # 200 requests/second
+      name: "Target load"
+    
+    # Phase 5: Stress test (beyond target to find limits)
+    - duration: 120  # 2 minutes
+      arrivalRate: 300  # 300 requests/second (target TPS)
+      name: "Stress test"
+    
+    # Phase 6: Recovery (test system recovery)
+    - duration: 60   # 1 minute
+      arrivalRate: 50  # Return to moderate load
+      name: "Recovery"
+  
+  # Default headers for all requests
+  defaults:
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer {{ $processEnvironment.JWT_TOKEN }}"
+  
+  # Processor for user ID generation
+  processor: "./test/performance/artillery-processor.js"
+  
+  # Plugins for additional metrics
+  plugins:
+    expect: {}  # Response validation
+    metrics-by-endpoint:
+      stripQueryString: true  # Normalize URLs
+  
+  # Payload file for user IDs
+  payload:
+    userIds:
+      path: "./test/performance/user-ids.json"
+      fields:
+        - "userId"
+
+# Test scenarios
+scenarios:
+  # Scenario 1: Credit eligibility stress (60% of traffic)
+  - name: "Credit eligibility stress"
+    weight: 60
+    flow:
+      - function: "generateUserId"
+      - get:
+          url: "/api/users/{{ userId }}/eligible-loan-amount"
+          expect:
+            - statusCode: [200, 429]  # Allow rate limiting (429) during high load
+            - maxResponseTime: 5000  # Allow up to 5s during stress
+      - think: 0.5  # 0.5 second think time between requests
+  
+  # Scenario 2: Mixed workload (40% of traffic)
+  - name: "Mixed workload"
+    weight: 40
+    flow:
+      - function: "generateUserId"
+      - get:
+          url: "/api/users/{{ userId }}/eligible-loan-amount"
+          expect:
+            - statusCode: [200, 429]
+      - think: 0.5
+      - get:
+          url: "/api/users/stats"
+          expect:
+            - statusCode: [200, 429]
+      - think: 0.5
+

@@ -56,6 +56,8 @@
     "perf:load:artillery": "artillery run test/performance/artillery-load.yml --output test-results/artillery-load.json",
     "perf:stress:artillery": "artillery run test/performance/artillery-stress.yml --output test-results/artillery-stress.json",
     "perf:soak:artillery": "artillery run test/performance/artillery-soak.yml --output test-results/artillery-soak.json",
+    "perf:stress:prod": "artillery run test/performance/artillery-stress-prod.yml --output test-results/stress-prod-$(date +%Y%m%d-%H%M%S).json",
+    "perf:stress:prod:k6": "k6 run test/performance/stress-test-prod.k6.js",
     "perf:report:artillery": "artillery report test-results/artillery-*.json",
     "perf:validate": "node test/performance/validate-setup.js",
     "perf:smoke": "node test/performance/smoke-test.js"
