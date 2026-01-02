@@ -41,13 +41,26 @@ export class ApiKeyService {
     description?: string,
   ): Promise<{ token: string; entity: ApiKey }> {
     // Check if email already has an active API key
-    const existingKey = await this.apiKeyRepository.findOne({
+    const existingActiveKey = await this.apiKeyRepository.findOne({
       where: { email, status: ApiKeyStatus.ACTIVE },
+    });
+
+    if (existingActiveKey) {
+      throw new BadRequestException(
+        `An active API key already exists for email: ${email}`,
+      );
+    }
+
+    // Check if email already has any API key (revoked/inactive)
+    // The database has a UNIQUE constraint on email, so we need to check
+    // for any existing key to avoid constraint violations
+    const existingKey = await this.apiKeyRepository.findOne({
+      where: { email },
     });
 
     if (existingKey) {
       throw new BadRequestException(
-        `An active API key already exists for email: ${email}`,
+        `An API key already exists for email: ${email} (status: ${existingKey.status}). Please revoke the existing key first if you want to create a new one.`,
       );
     }
 
