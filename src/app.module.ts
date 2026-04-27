@@ -54,6 +54,21 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { MnoModule } from './modules/mno/mno.module';
 import { MarkdownDocsService } from './common/services/markdown-docs.service';
 import { PerformanceInterceptor } from './common/interceptors/performance.interceptor';
+import {
+  CsdpSubscriber,
+  CsdpEligibilityLog,
+  CsdpEligibilityOutcome,
+  CsdpLoan,
+  CsdpRecovery,
+  CsdpRecoveryLoanItem,
+  CsdpWebhookInboundLog,
+  CsdpFeatureFlag,
+  CsdpIngestBatch,
+  CsdpIngestRow,
+  CsdpCdrRefill,
+  CsdpCdrSdp,
+} from './entities/csdp';
+import { CsdpModule } from './modules/csdp/csdp.module';
 
 @Module({
   imports: [
@@ -132,6 +147,27 @@ import { PerformanceInterceptor } from './common/interceptors/performance.interc
           .uri()
           .optional()
           .default('http://localhost:5173'),
+        // CSDP Phase 0 — all optional, fall back to default DB envs
+        DATABASE_HOT_URL: Joi.string().optional(),
+        DATABASE_BATCH_URL: Joi.string().optional(),
+        DATABASE_DIRECT_URL: Joi.string().optional(),
+        CSDP_HOT_POOL_MAX: Joi.number().integer().min(1).optional(),
+        CSDP_BATCH_POOL_MAX: Joi.number().integer().min(1).optional(),
+        CSDP_DB_IDLE_TIMEOUT_MS: Joi.number().integer().min(0).optional(),
+        BATCH_PORT: Joi.number().port().optional().default(3001),
+        // CSDP Phase 1 — Teamwee adapter config (all optional)
+        TEAMWEE_BASE_URL: Joi.string().uri().optional(),
+        TEAMWEE_API_KEY: Joi.string().optional(),
+        TEAMWEE_TIMEOUT_MS: Joi.number().optional().default(800),
+        TEAMWEE_CB_THRESHOLD: Joi.number().optional().default(5),
+        TEAMWEE_CB_RESET_MS: Joi.number().optional().default(30000),
+        // CSDP API-key auth (shared secret for Airtel integration)
+        CSDP_API_KEY: Joi.string().optional(),
+        CSDP_API_KEY_SCOPES: Joi.string().optional(),
+        // CSDP Step 8 — ingest file storage
+        CSDP_INGEST_STORAGE_DIR: Joi.string().optional(),
+        CSDP_INGEST_TMP_DIR: Joi.string().optional(),
+        CSDP_INGEST_MAX_BYTES: Joi.number().integer().min(1).optional(),
       }),
       validationOptions: {
         abortEarly: false,
@@ -175,6 +211,114 @@ import { PerformanceInterceptor } from './common/interceptors/performance.interc
           ],
           synchronize: false,
           logging: configService.get('NODE_ENV') === 'development',
+        };
+      },
+    }),
+    // CSDP named connections — Phase 1 entities registered
+    TypeOrmModule.forRootAsync({
+      name: 'csdpHot',
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const hotUrl = configService.get<string>('DATABASE_HOT_URL');
+        const isLogging = configService.get<string>('NODE_ENV') === 'development';
+        const poolMax = parseInt(
+          configService.get<string>('CSDP_HOT_POOL_MAX') ?? '20',
+          10,
+        );
+        const idleTimeoutMs = parseInt(
+          configService.get<string>('CSDP_DB_IDLE_TIMEOUT_MS') ?? '10000',
+          10,
+        );
+        const base = {
+          type: 'postgres' as const,
+          name: 'csdpHot',
+          entities: [
+            CsdpSubscriber,
+            CsdpEligibilityLog,
+            CsdpEligibilityOutcome,
+            CsdpLoan,
+            CsdpRecovery,
+            CsdpRecoveryLoanItem,
+            CsdpWebhookInboundLog,
+            CsdpFeatureFlag,
+            CsdpIngestBatch,
+            CsdpIngestRow,
+            CsdpCdrRefill,
+            CsdpCdrSdp,
+          ],
+          synchronize: false,
+          logging: isLogging,
+          extra: {
+            max: poolMax,
+            idleTimeoutMillis: idleTimeoutMs,
+            statement_cache_size: 0,
+          },
+        };
+        if (hotUrl) {
+          return { ...base, url: hotUrl };
+        }
+        // Fall back to default DB envs so dev works without pgbouncer
+        return {
+          ...base,
+          host: configService.get<string>('DB_HOST') || 'localhost',
+          port: parseInt(configService.get<string>('DB_PORT') ?? '5432', 10),
+          username: configService.get<string>('DB_USERNAME') || 'postgres',
+          password: configService.get<string>('DB_PASSWORD') || 'postgres',
+          database: configService.get<string>('DB_NAME') || 'rim_db',
+        };
+      },
+    }),
+    TypeOrmModule.forRootAsync({
+      name: 'csdpBatch',
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const batchUrl = configService.get<string>('DATABASE_BATCH_URL');
+        const isLogging = configService.get<string>('NODE_ENV') === 'development';
+        const poolMax = parseInt(
+          configService.get<string>('CSDP_BATCH_POOL_MAX') ?? '3',
+          10,
+        );
+        const idleTimeoutMs = parseInt(
+          configService.get<string>('CSDP_DB_IDLE_TIMEOUT_MS') ?? '10000',
+          10,
+        );
+        const base = {
+          type: 'postgres' as const,
+          name: 'csdpBatch',
+          entities: [
+            CsdpSubscriber,
+            CsdpEligibilityLog,
+            CsdpEligibilityOutcome,
+            CsdpLoan,
+            CsdpRecovery,
+            CsdpRecoveryLoanItem,
+            CsdpWebhookInboundLog,
+            CsdpFeatureFlag,
+            CsdpIngestBatch,
+            CsdpIngestRow,
+            CsdpCdrRefill,
+            CsdpCdrSdp,
+          ],
+          synchronize: false,
+          logging: isLogging,
+          extra: {
+            max: poolMax,
+            idleTimeoutMillis: idleTimeoutMs,
+            statement_cache_size: 0,
+          },
+        };
+        if (batchUrl) {
+          return { ...base, url: batchUrl };
+        }
+        return {
+          ...base,
+          host: configService.get<string>('DB_HOST') || 'localhost',
+          port: parseInt(configService.get<string>('DB_PORT') ?? '5432', 10),
+          username: configService.get<string>('DB_USERNAME') || 'postgres',
+          password: configService.get<string>('DB_PASSWORD') || 'postgres',
+          database: configService.get<string>('DB_NAME') || 'rim_db',
         };
       },
     }),
@@ -223,6 +367,7 @@ import { PerformanceInterceptor } from './common/interceptors/performance.interc
     CreditScoreModule,
     NotificationsModule,
     MnoModule,
+    CsdpModule,
   ],
   controllers: [AppController],
   providers: [

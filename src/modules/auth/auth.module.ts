@@ -13,6 +13,8 @@ import { PendingLoginRepository } from './repositories/pending-login.repository'
 import { BackupCodeRepository } from './repositories/backup-code.repository';
 import { AdminController } from './controllers/admin.controller';
 import { PermissionsGuard } from './guards/permissions.guard';
+import { MfaConfirmedGuard } from './guards/mfa-confirmed.guard';
+import { CsdpApiKeyGuard } from './guards/csdp-api-key.guard';
 import { EmailModule } from '../email/email.module';
 import { ApiKeyModule } from './api-key.module';
 import { OAuth2Controller } from './controllers/oauth2.controller';
@@ -51,8 +53,10 @@ import { ApiKey } from '../../entities/api-key.entity';
     BackupCodeRepository,
     JwtStrategy,
     PermissionsGuard,
+    MfaConfirmedGuard,
     OAuth2Service,
     OAuth2Guard,
+    CsdpApiKeyGuard,
   ],
   exports: [
     AuthService,
@@ -63,6 +67,7 @@ import { ApiKey } from '../../entities/api-key.entity';
     OAuth2Service,
     OAuth2Guard,
     JwtModule,
+    CsdpApiKeyGuard,
   ],
 })
 export class AuthModule {}

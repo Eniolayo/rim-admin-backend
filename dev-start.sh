@@ -55,7 +55,7 @@ if docker ps --format '{{.Names}}' | grep -q 'rim-admin-be-dev'; then
   echo "   - View logs:           docker-compose -f docker-compose.dev.yml logs -f"
   echo "   - View app logs only:  docker-compose -f docker-compose.dev.yml logs -f app"
   echo "   - Run migrations:      docker-compose -f docker-compose.dev.yml exec app npm run migration:run"
-  echo "   - Generate migration:  docker-compose -f docker-compose.dev.yml exec app npm run migration:generate -- src/database/migrations/MigrationName"
+  echo "   - Generate migration:  docker-compose -f docker-compose.dev.yml exec app npm run migration:generate -- src/database/migrations/csdp/MigrationName"
   echo "   - Run performance:     k6 run test/performance/performance-test.k6.js"
   echo "   - Manual feed job:     curl -X POST http://localhost:3000/api/admin/settings/configs/trigger-feed (if implemented)"
   echo "   - Stop containers:     docker-compose -f docker-compose.dev.yml down"

@@ -75,3 +75,97 @@ export const dataSourceOptions: DataSourceOptions = {
 const dataSource = new DataSource(dataSourceOptions);
 
 export default dataSource;
+
+// ---------------------------------------------------------------------------
+// CSDP named data-source options
+// Falls back to the same default DB env vars when CSDP-specific vars are absent
+// so local development works without a pgbouncer setup.
+// ---------------------------------------------------------------------------
+
+const csdpHotUrl = process.env.DATABASE_HOT_URL;
+const csdpBatchUrl = process.env.DATABASE_BATCH_URL;
+const directUrl = process.env.DATABASE_DIRECT_URL;
+
+export const csdpHotDataSourceOptions: DataSourceOptions = {
+  type: 'postgres',
+  ...(csdpHotUrl
+    ? { url: csdpHotUrl }
+    : {
+        host: process.env.CSDP_HOT_DB_HOST || process.env.DB_HOST || 'localhost',
+        port: parseInt(
+          process.env.CSDP_HOT_DB_PORT || process.env.DB_PORT || '5432',
+          10,
+        ),
+        username:
+          process.env.CSDP_HOT_DB_USERNAME ||
+          process.env.DB_USERNAME ||
+          'postgres',
+        password:
+          process.env.CSDP_HOT_DB_PASSWORD ||
+          process.env.DB_PASSWORD ||
+          'postgres',
+        database:
+          process.env.CSDP_HOT_DB_NAME || process.env.DB_NAME || 'rim_db',
+      }),
+  entities: [],
+  synchronize: false,
+  logging: isDevelopment,
+  extra: {
+    max: parseInt(process.env.CSDP_HOT_POOL_MAX ?? '20', 10),
+    idleTimeoutMillis: 10000,
+    statement_cache_size: 0,
+  },
+};
+
+export const csdpBatchDataSourceOptions: DataSourceOptions = {
+  type: 'postgres',
+  ...(csdpBatchUrl
+    ? { url: csdpBatchUrl }
+    : {
+        host:
+          process.env.CSDP_BATCH_DB_HOST ||
+          process.env.DB_HOST ||
+          'localhost',
+        port: parseInt(
+          process.env.CSDP_BATCH_DB_PORT || process.env.DB_PORT || '5432',
+          10,
+        ),
+        username:
+          process.env.CSDP_BATCH_DB_USERNAME ||
+          process.env.DB_USERNAME ||
+          'postgres',
+        password:
+          process.env.CSDP_BATCH_DB_PASSWORD ||
+          process.env.DB_PASSWORD ||
+          'postgres',
+        database:
+          process.env.CSDP_BATCH_DB_NAME || process.env.DB_NAME || 'rim_db',
+      }),
+  entities: [],
+  synchronize: false,
+  logging: isDevelopment,
+  extra: {
+    max: parseInt(process.env.CSDP_BATCH_POOL_MAX ?? '3', 10),
+    idleTimeoutMillis: 10000,
+    statement_cache_size: 0,
+  },
+};
+
+/** Uses DATABASE_DIRECT_URL (bypasses pgbouncer) or falls back to default. */
+export const migrationsDataSourceOptions: DataSourceOptions = {
+  ...(directUrl
+    ? ({
+        type: 'postgres',
+        url: directUrl,
+      } as DataSourceOptions)
+    : dataSourceOptions),
+  entities: [
+    join(__dirname, '..', 'entities', '**', `*.entity${entityExtension}`),
+  ],
+  migrations: [join(__dirname, 'migrations', '**', `*${migrationExtension}`)],
+  synchronize: false,
+};
+
+export const csdpHotDataSource = new DataSource(csdpHotDataSourceOptions);
+export const csdpBatchDataSource = new DataSource(csdpBatchDataSourceOptions);
+export const migrationsDataSource = new DataSource(migrationsDataSourceOptions);

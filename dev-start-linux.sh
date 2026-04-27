@@ -191,7 +191,7 @@ if docker ps --format '{{.Names}}' | grep -q 'rim-admin-be-dev'; then
   echo "   - View app logs only:  $DOCKER_COMPOSE_CMD -f docker-compose.dev.yml logs -f app"
   echo "   - View db logs:        $DOCKER_COMPOSE_CMD -f docker-compose.dev.yml logs -f postgres"
   echo "   - Run migrations:      $DOCKER_COMPOSE_CMD -f docker-compose.dev.yml exec app npm run migration:run"
-  echo "   - Generate migration:  $DOCKER_COMPOSE_CMD -f docker-compose.dev.yml exec app npm run migration:generate -- src/database/migrations/MigrationName"
+  echo "   - Generate migration:  $DOCKER_COMPOSE_CMD -f docker-compose.dev.yml exec app npm run migration:generate -- src/database/migrations/csdp/MigrationName"
   echo "   - Run tests:           $DOCKER_COMPOSE_CMD -f docker-compose.dev.yml exec app npm test"
   echo "   - Run e2e tests:       $DOCKER_COMPOSE_CMD -f docker-compose.dev.yml exec app npm run test:e2e"
   echo "   - Stop containers:     $DOCKER_COMPOSE_CMD -f docker-compose.dev.yml down"

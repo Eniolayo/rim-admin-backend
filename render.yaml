@@ -14,3 +14,41 @@ services:
           property: port
       - key: REDIS_URL
         value: redis://red-d4bmvo0dl3ps73b0jjs0:6379
+      - key: DATABASE_HOT_URL
+        sync: false
+      - key: DATABASE_BATCH_URL
+        sync: false
+      - key: DATABASE_DIRECT_URL
+        sync: false
+      - key: CSDP_HOT_POOL_MAX
+        value: "20"
+      - key: CSDP_BATCH_POOL_MAX
+        value: "3"
+      - key: BATCH_PORT
+        value: "3001"
+
+  - type: web
+    name: rim-admin-backend-batch
+    env: node
+    buildCommand: npm ci --legacy-peer-deps && npm run build
+    startCommand: npm run start:batch
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BATCH_PORT
+        fromService:
+          type: web
+          name: rim-admin-backend-batch
+          property: port
+      - key: REDIS_URL
+        value: redis://red-d4bmvo0dl3ps73b0jjs0:6379
+      - key: DATABASE_HOT_URL
+        sync: false
+      - key: DATABASE_BATCH_URL
+        sync: false
+      - key: DATABASE_DIRECT_URL
+        sync: false
+      - key: CSDP_HOT_POOL_MAX
+        value: "20"
+      - key: CSDP_BATCH_POOL_MAX
+        value: "3"

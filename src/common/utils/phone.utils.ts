@@ -52,4 +52,24 @@ export function normalizeNigerianPhone(
   return digits;
 }
 
+/**
+ * Normalises to E.164-style Nigerian MSISDN: "234XXXXXXXXXX" (13 digits, no +).
+ * CSDP convention. Returns null on input we can't safely normalise.
+ */
+export function toE164Nigerian(raw: string | null | undefined): string | null {
+  const local = normalizeNigerianPhone(raw);
+  if (!local) return null;
+  if (!/^0\d{10}$/.test(local)) return null;
+  return `234${local.slice(1)}`;
+}
 
+/**
+ * Masks an MSISDN for logs: keeps country code prefix + last 4, stars middle.
+ * Examples: 2347030278896 -> 234XXXXX8896
+ */
+export function maskMsisdn(value: unknown): string {
+  if (typeof value !== 'string') return '***';
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 8) return '***';
+  return `${digits.slice(0, 3)}XXXXX${digits.slice(-4)}`;
+}
