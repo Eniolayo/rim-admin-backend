@@ -4,6 +4,7 @@ import { ConfigModule, ConfigType, ConfigService } from '@nestjs/config';
 import appConfig from '../../config/app.config';
 import { LogSigningService } from '../services/log-signing.service';
 import { createSignedLogDestination } from './signed-log-destination';
+import { maskMsisdn } from '../utils/phone.utils';
 
 @Module({
   imports: [
@@ -38,6 +39,17 @@ import { createSignedLogDestination } from './signed-log-destination';
               stack: err.stack,
             }),
           },
+        };
+
+        pinoConfig.redact = {
+          paths: [
+            'msisdn',
+            'context.msisdn',
+            'req.body.msisdn',
+            'req.headers["x-msisdn"]',
+            '*.msisdn',
+          ],
+          censor: (val: any) => maskMsisdn(val),
         };
 
         // Always use signed log destination (both dev and prod)

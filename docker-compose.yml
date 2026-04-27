@@ -21,6 +21,30 @@ services:
     networks:
       - rim-network
 
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.25.1-p0
+    container_name: rim-pgbouncer
+    restart: unless-stopped
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      POOL_MODE: transaction
+      AUTH_TYPE: scram-sha-256
+      MAX_CLIENT_CONN: 200
+      DEFAULT_POOL_SIZE: 20
+      RESERVE_POOL_SIZE: 5
+      SERVER_RESET_QUERY: DISCARD ALL
+      ADMIN_USERS: ${DB_USERNAME:-postgres}
+    ports:
+      - "6432:5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - rim-network
+
   app:
     build:
       context: .
@@ -30,7 +54,7 @@ services:
     ports:
       - "${PORT:-3000}:3000"
     environment:
-      NODE_ENV: ${NODE_ENV:-development}
+      NODE_ENV: ${NODE_ENV:-production}
       PORT: ${PORT:-3000}
       DB_HOST: postgres
       DB_PORT: 5432
@@ -48,16 +72,71 @@ services:
       EMAIL_FROM: ${EMAIL_FROM:-noreply@rim.ng}
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-RIM Team}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      # CSDP Phase 0 — pgbouncer URLs
+      DATABASE_HOT_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@pgbouncer:5432/${DB_NAME:-rim_db}
+      DATABASE_BATCH_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@pgbouncer:5432/${DB_NAME:-rim_db}
+      DATABASE_DIRECT_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-rim_db}
+      CSDP_HOT_POOL_MAX: 20
+      CSDP_BATCH_POOL_MAX: 3
+      BATCH_PORT: 3001
     depends_on:
       postgres:
         condition: service_healthy
+      pgbouncer:
+        condition: service_started
     volumes:
       - ./src:/app/src
       - ./package.json:/app/package.json
       - ./tsconfig.json:/app/tsconfig.json
     networks:
       - rim-network
-    command: npm run start:dev
+    command: npm start
+
+  app-batch:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rim-admin-be-batch
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      BATCH_PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: ${DB_USERNAME:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-rim_db}
+      DATABASE_HOT_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@pgbouncer:5432/${DB_NAME:-rim_db}
+      DATABASE_BATCH_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@pgbouncer:5432/${DB_NAME:-rim_db}
+      DATABASE_DIRECT_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-rim_db}
+      CSDP_HOT_POOL_MAX: 20
+      CSDP_BATCH_POOL_MAX: 3
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-1h}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-change-in-production}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+      REDIS_URL: ${REDIS_URL:-}
+      REDIS_HOST: ${REDIS_HOST:-localhost}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      EMAIL_HOST: ${EMAIL_HOST:-smtp.zeptomail.com}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_USER: ${EMAIL_USER:-emailapikey}
+      EMAIL_PASS: ${EMAIL_PASS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@rim.ng}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-RIM Team}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pgbouncer:
+        condition: service_started
+    networks:
+      - rim-network
+    command: npm run start:batch
 
 volumes:
   postgres_data:
