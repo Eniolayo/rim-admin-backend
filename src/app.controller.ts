@@ -3,6 +3,7 @@ import { ApiExcludeEndpoint } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { AppService } from './app.service';
 import { MarkdownDocsService } from './common/services/markdown-docs.service';
+import { Public } from './modules/auth/decorators/public.decorator';
 
 @Controller()
 export class AppController {
@@ -16,6 +17,7 @@ export class AppController {
     return this.appService.getHello();
   }
 
+  @Public()
   @Get('health')
   @ApiExcludeEndpoint()
   health(): { status: string; timestamp: string } {
