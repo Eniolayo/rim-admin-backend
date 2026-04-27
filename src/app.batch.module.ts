@@ -7,6 +7,16 @@ import { LoggerModule } from './common/logger/logger.module';
 import { RedisModule } from './common/redis/redis.module';
 import redisConfig from './config/redis.config';
 import appConfig from './config/app.config';
+import jwtConfig from './config/jwt.config';
+import {
+  AdminUser,
+  AdminRole,
+  Department,
+  SupportAgent,
+  PendingLogin,
+  BackupCode,
+  ApiKey,
+} from './entities';
 import {
   CsdpSubscriber,
   CsdpEligibilityLog,
@@ -28,7 +38,7 @@ import { CsdpModule } from './modules/csdp/csdp.module';
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: ['.env.local', '.env'],
-      load: [redisConfig, appConfig],
+      load: [redisConfig, appConfig, jwtConfig],
       // No Joi schema here — the hot process (AppModule) validates envs.
     }),
     LoggerModule,
@@ -50,6 +60,41 @@ import { CsdpModule } from './modules/csdp/csdp.module';
     PrometheusModule.register({ path: '/metrics' }),
     RedisModule,
     CsdpModule,
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => {
+        const isLogging = configService.get<string>('NODE_ENV') === 'development';
+        return {
+          type: 'postgres' as const,
+          entities: [
+            AdminUser,
+            AdminRole,
+            Department,
+            SupportAgent,
+            PendingLogin,
+            BackupCode,
+            ApiKey,
+          ],
+          synchronize: false,
+          logging: isLogging,
+          // Keep this lean; batch process does not serve auth traffic.
+          extra: {
+            max: 2,
+            idleTimeoutMillis: parseInt(
+              configService.get<string>('CSDP_DB_IDLE_TIMEOUT_MS') ?? '10000',
+              10,
+            ),
+            statement_cache_size: 0,
+          },
+          host: configService.get<string>('DB_HOST') || 'localhost',
+          port: parseInt(configService.get<string>('DB_PORT') ?? '5432', 10),
+          username: configService.get<string>('DB_USERNAME') || 'postgres',
+          password: configService.get<string>('DB_PASSWORD') || 'postgres',
+          database: configService.get<string>('DB_NAME') || 'rim_db',
+        };
+      },
+    }),
     TypeOrmModule.forRootAsync({
       name: 'csdpHot',
       imports: [ConfigModule],
