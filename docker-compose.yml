@@ -1,20 +1,36 @@
-version: '3.8'
+# Production compose for the RIM CSDP single-VM pilot.
+# Run from /data/compose with:
+#   docker compose --env-file /data/compose/.env -f /data/apps/rim-admin-backend/docker-compose.yml up -d
+# For local dev, use docker-compose.dev.yml instead.
 
 services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: rim-nginx
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - /data/nginx/conf.d:/etc/nginx/conf.d:ro
+      - /data/nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      app:
+        condition: service_started
+    networks:
+      - rim-network
+
   postgres:
     image: postgres:16-alpine
     container_name: rim-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USERNAME:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
-      POSTGRES_DB: ${DB_NAME:-rim_db}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+      POSTGRES_USER: ${DB_USERNAME:?DB_USERNAME required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD required}
+      POSTGRES_DB: ${DB_NAME:?DB_NAME required}
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - /data/postgres:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-postgres}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,20 +44,40 @@ services:
     environment:
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USER: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_USER: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
       POOL_MODE: transaction
       AUTH_TYPE: scram-sha-256
       MAX_CLIENT_CONN: 200
       DEFAULT_POOL_SIZE: 20
       RESERVE_POOL_SIZE: 5
       SERVER_RESET_QUERY: DISCARD ALL
-      ADMIN_USERS: ${DB_USERNAME:-postgres}
-    ports:
-      - "6432:5432"
+      ADMIN_USERS: ${DB_USERNAME}
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - rim-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: rim-redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD required}
+    volumes:
+      - /data/redis:/data
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $$REDIS_PASSWORD ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - rim-network
 
@@ -49,97 +85,90 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: production
     container_name: rim-admin-be
     restart: unless-stopped
-    ports:
-      - "${PORT:-3000}:3000"
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
-      PORT: ${PORT:-3000}
+      NODE_ENV: production
+      PORT: 3000
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
-      DB_NAME: ${DB_NAME:-rim_db}
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
       JWT_EXPIRATION: ${JWT_EXPIRATION:-1h}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-change-in-production}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET required}
       JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
       EMAIL_HOST: ${EMAIL_HOST:-smtp.zeptomail.com}
       EMAIL_PORT: ${EMAIL_PORT:-587}
-      EMAIL_USER: ${EMAIL_USER:-emailapikey}
-      EMAIL_PASS: ${EMAIL_PASS:-wSsVR61wqUP4Df9/m2D/ce1qygtQA1OiRx91iVv36XP+SK/B9cdtnxecDAWgSaRKGWZtFGYQpLsvmkxU0mcMit54mF8AXiiF9mqRe1U4J3x17qnvhDzNXGlekBOPLYMAzwhqnWlhF8oq+g==}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@rim.ng}
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-RIM Team}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
-      # CSDP Phase 0 — pgbouncer URLs
-      DATABASE_HOT_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@pgbouncer:5432/${DB_NAME:-rim_db}
-      DATABASE_BATCH_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@pgbouncer:5432/${DB_NAME:-rim_db}
-      DATABASE_DIRECT_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-rim_db}
+      FRONTEND_URL: ${FRONTEND_URL}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      DATABASE_HOT_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@pgbouncer:5432/${DB_NAME}
+      DATABASE_BATCH_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@pgbouncer:5432/${DB_NAME}
+      DATABASE_DIRECT_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       CSDP_HOT_POOL_MAX: 20
       CSDP_BATCH_POOL_MAX: 3
-      BATCH_PORT: 3001
     depends_on:
       postgres:
         condition: service_healthy
       pgbouncer:
         condition: service_started
-    volumes:
-      - ./src:/app/src
-      - ./package.json:/app/package.json
-      - ./tsconfig.json:/app/tsconfig.json
+      redis:
+        condition: service_healthy
     networks:
       - rim-network
-    command: npm start
+    command: node dist/src/main.js
 
   app-batch:
     build:
       context: .
       dockerfile: Dockerfile
+      target: production
     container_name: rim-admin-be-batch
     restart: unless-stopped
-    env_file:
-      - .env
     environment:
-      NODE_ENV: ${NODE_ENV:-production}
+      NODE_ENV: production
       BATCH_PORT: 3001
       DB_HOST: postgres
       DB_PORT: 5432
-      DB_USERNAME: ${DB_USERNAME:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-postgres}
-      DB_NAME: ${DB_NAME:-rim_db}
-      DATABASE_HOT_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@pgbouncer:5432/${DB_NAME:-rim_db}
-      DATABASE_BATCH_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@pgbouncer:5432/${DB_NAME:-rim_db}
-      DATABASE_DIRECT_URL: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD:-postgres}@postgres:5432/${DB_NAME:-rim_db}
+      DB_USERNAME: ${DB_USERNAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-1h}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      DATABASE_HOT_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@pgbouncer:5432/${DB_NAME}
+      DATABASE_BATCH_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@pgbouncer:5432/${DB_NAME}
+      DATABASE_DIRECT_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       CSDP_HOT_POOL_MAX: 20
       CSDP_BATCH_POOL_MAX: 3
-      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
-      JWT_EXPIRATION: ${JWT_EXPIRATION:-1h}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-super-secret-refresh-key-change-in-production}
-      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
-      REDIS_URL: ${REDIS_URL:-}
-      REDIS_HOST: ${REDIS_HOST:-localhost}
-      REDIS_PORT: ${REDIS_PORT:-6379}
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
       EMAIL_HOST: ${EMAIL_HOST:-smtp.zeptomail.com}
       EMAIL_PORT: ${EMAIL_PORT:-587}
-      EMAIL_USER: ${EMAIL_USER:-emailapikey}
-      EMAIL_PASS: ${EMAIL_PASS:-}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASS: ${EMAIL_PASS}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@rim.ng}
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-RIM Team}
-    ports:
-      - "3001:3001"
     depends_on:
       postgres:
         condition: service_healthy
       pgbouncer:
         condition: service_started
+      redis:
+        condition: service_healthy
     networks:
       - rim-network
-    command: npm run start:batch
-
-volumes:
-  postgres_data:
+    command: node dist/src/main.batch.js
 
 networks:
   rim-network:

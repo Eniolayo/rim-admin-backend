@@ -181,8 +181,6 @@ services:
       DB_USERNAME: ${DB_USERNAME:-postgres}
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_NAME: ${DB_NAME:-rim_db_dev}
-    ports:
-      - '3001:3001'
     depends_on:
       postgres:
         condition: service_healthy
@@ -198,6 +196,8 @@ services:
     networks:
       - rim-network-dev
     command: npm run start:dev:batch
+    # No host ports: batch workers + internal HTTP (/metrics, optional probes) listen on
+    # BATCH_PORT inside the compose network only. External / partner traffic uses app:3000.
 
 volumes:
   postgres_dev_data:
