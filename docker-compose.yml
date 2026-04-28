@@ -115,6 +115,12 @@ services:
       DATABASE_DIRECT_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       CSDP_HOT_POOL_MAX: 20
       CSDP_BATCH_POOL_MAX: 3
+      API_PREFIX: ${API_PREFIX:-api}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      CSDP_API_KEY: ${CSDP_API_KEY:?CSDP_API_KEY required}
+      CSDP_API_KEY_SCOPES: ${CSDP_API_KEY_SCOPES:-csdp:profile,csdp:webhook,csdp:ingest}
+      TEAMWEE_BASE_URL: ${TEAMWEE_BASE_URL:-}
+      TEAMWEE_API_KEY: ${TEAMWEE_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -153,6 +159,12 @@ services:
       DATABASE_DIRECT_URL: postgresql://${DB_USERNAME}:${DB_PASSWORD}@postgres:5432/${DB_NAME}
       CSDP_HOT_POOL_MAX: 20
       CSDP_BATCH_POOL_MAX: 3
+      API_PREFIX: ${API_PREFIX:-api}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+      CSDP_API_KEY: ${CSDP_API_KEY:?CSDP_API_KEY required}
+      CSDP_API_KEY_SCOPES: ${CSDP_API_KEY_SCOPES:-csdp:profile,csdp:webhook,csdp:ingest}
+      TEAMWEE_BASE_URL: ${TEAMWEE_BASE_URL:-}
+      TEAMWEE_API_KEY: ${TEAMWEE_API_KEY:-}
       EMAIL_HOST: ${EMAIL_HOST:-smtp.zeptomail.com}
       EMAIL_PORT: ${EMAIL_PORT:-587}
       EMAIL_USER: ${EMAIL_USER}
