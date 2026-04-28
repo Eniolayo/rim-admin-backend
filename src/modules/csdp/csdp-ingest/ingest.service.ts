@@ -117,6 +117,57 @@ export class IngestService {
     return qb.getMany();
   }
 
+  /**
+   * Paginated list of batches for the admin UI. Supports filtering by
+   * source/status and an optional createdAt date range. Response shape
+   * matches the rim-admin frontend's PaginatedResponse<T> contract.
+   */
+  async listBatchesPaginated(opts: {
+    source?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+    dateFrom?: string;
+    dateTo?: string;
+  }): Promise<{
+    data: CsdpIngestBatch[];
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  }> {
+    const page = Math.max(1, Math.floor(opts.page ?? 1));
+    const limit = Math.min(200, Math.max(1, Math.floor(opts.limit ?? 25)));
+
+    const qb = this.batchRepo
+      .createQueryBuilder('b')
+      .orderBy('b.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    if (opts.source) {
+      qb.andWhere('b.source = :source', { source: opts.source });
+    }
+    if (opts.status) {
+      qb.andWhere('b.status = :status', { status: opts.status });
+    }
+    if (opts.dateFrom) {
+      qb.andWhere('b.createdAt >= :dateFrom', { dateFrom: opts.dateFrom });
+    }
+    if (opts.dateTo) {
+      qb.andWhere('b.createdAt <= :dateTo', { dateTo: opts.dateTo });
+    }
+
+    const [data, total] = await qb.getManyAndCount();
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.max(1, Math.ceil(total / limit)),
+    };
+  }
+
   async getBatch(id: string): Promise<CsdpIngestBatch | null> {
     return this.batchRepo.findOne({ where: { id } });
   }
