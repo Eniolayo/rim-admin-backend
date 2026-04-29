@@ -11,8 +11,14 @@ import { RedisService } from '../../../common/redis/redis.service';
 @Injectable()
 export class ApiKeyRateLimitGuard implements CanActivate {
   private readonly logger = new Logger(ApiKeyRateLimitGuard.name);
-  private readonly limit = 1000; // requests per minute
-  private readonly ttl = 60; // 60 seconds
+  private readonly limit = parseInt(
+    process.env.API_KEY_RATE_LIMIT || '1000',
+    10,
+  ); // requests per window
+  private readonly ttl = parseInt(
+    process.env.API_KEY_RATE_TTL_SECONDS || '60',
+    10,
+  ); // window length in seconds
 
   constructor(private readonly redisService: RedisService) {}
 
@@ -45,7 +51,7 @@ export class ApiKeyRateLimitGuard implements CanActivate {
           `Rate limit exceeded for API key ${apiKeyId}: ${count} requests in ${this.ttl} seconds`,
         );
         throw new HttpException(
-          'Rate limit exceeded. Maximum 1000 requests per minute.',
+          `Rate limit exceeded. Maximum ${this.limit} requests per ${this.ttl} seconds.`,
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
