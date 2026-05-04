@@ -10,3 +10,4 @@ export { CsdpIngestBatch } from './csdp-ingest-batch.entity';
 export { CsdpIngestRow } from './csdp-ingest-row.entity';
 export { CsdpCdrRefill } from './csdp-cdr-refill.entity';
 export { CsdpCdrSdp } from './csdp-cdr-sdp.entity';
+export { CsdpSubscriberDiscrepancyLog } from './csdp-subscriber-discrepancy-log.entity';

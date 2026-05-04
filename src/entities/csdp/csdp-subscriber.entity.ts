@@ -33,6 +33,13 @@ export class CsdpSubscriber {
   @Column({ name: 'last_loan_at', type: 'timestamp', nullable: true })
   lastLoanAt: Date | null;
 
+  @Index()
+  @Column({ name: 'activated_at', type: 'date', nullable: true })
+  activatedAt: string | null;
+
+  @Column({ name: 'service_class_id', type: 'int', nullable: true })
+  serviceClassId: number | null;
+
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
 

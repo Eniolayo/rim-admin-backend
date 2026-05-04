@@ -215,6 +215,7 @@ export class IngestService {
   private resolveJobName(source: string): string {
     if (source === 'refill') return 'parse-refill';
     if (source === 'sdp') return 'parse-sdp';
+    if (source === 'airtel-activation') return 'parse-activation';
     return 'parse-vendor'; // vendor:avyra | vendor:erl | vendor:fonyou
   }
 

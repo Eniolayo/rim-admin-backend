@@ -21,6 +21,9 @@ export class CsdpCdrRefill {
   @Column({ name: 'amount_kobo', type: 'bigint' })
   amountKobo: string;
 
+  @Column({ name: 'service_class', type: 'int', nullable: true })
+  serviceClass: number | null;
+
   @Column({ type: 'jsonb' })
   raw: Record<string, any>;
 

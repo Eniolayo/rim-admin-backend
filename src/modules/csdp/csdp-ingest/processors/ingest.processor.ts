@@ -13,9 +13,16 @@ import { CsdpCdrRefill } from '../../../../entities/csdp/csdp-cdr-refill.entity'
 import { CsdpCdrSdp } from '../../../../entities/csdp/csdp-cdr-sdp.entity';
 import { CsdpLoan } from '../../../../entities/csdp/csdp-loan.entity';
 import { CsdpRecovery } from '../../../../entities/csdp/csdp-recovery.entity';
+import { CsdpSubscriber } from '../../../../entities/csdp/csdp-subscriber.entity';
+import { CsdpSubscriberDiscrepancyLog } from '../../../../entities/csdp/csdp-subscriber-discrepancy-log.entity';
 import { parseRefill, RefillRow, RefillRowError } from '../parsers/refill.parser';
 import { parseSdp, SdpRow, SdpRowError } from '../parsers/sdp.parser';
 import { parseVendor, VendorRow, VendorRowError } from '../parsers/vendor.parser';
+import {
+  parseActivation,
+  ActivationRow,
+  ActivationRowError,
+} from '../parsers/activation.parser';
 import { CSDP_METRICS } from '../../csdp-core/metrics/csdp-metrics.module';
 
 export interface IngestJobPayload {
@@ -75,6 +82,9 @@ export class IngestProcessor extends WorkerHost {
           break;
         case 'parse-vendor':
           await this.processVendor(batch_id, source, file_date, filePath);
+          break;
+        case 'parse-activation':
+          await this.processActivation(batch_id, source, file_date, filePath);
           break;
         default:
           this.logger.warn(`Unknown job name: ${job.name}, skipping`);
@@ -201,6 +211,7 @@ export class IngestProcessor extends WorkerHost {
           msisdn: okRow.msisdn,
           eventAt: okRow.event_at,
           amountKobo: okRow.amount_kobo.toString(),
+          serviceClass: okRow.service_class,
           raw: okRow.raw,
         });
       }
@@ -436,6 +447,190 @@ export class IngestProcessor extends WorkerHost {
 
     this.logger.log(
       `Batch ${batchId} (vendor) parsed: total=${rowsTotal} ok=${rowsOk} rejected=${rowsRejected}`,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Activation
+  // ---------------------------------------------------------------------------
+
+  private async processActivation(
+    batchId: string,
+    source: string,
+    fileDate: string,
+    filePath: string,
+  ): Promise<void> {
+    let rowsTotal = 0;
+    let rowsOk = 0;
+    let rowsRejected = 0;
+
+    const ingestRowBuffer: Partial<CsdpIngestRow>[] = [];
+    const parsedBuffer: ActivationRow[] = [];
+
+    const flushIngestRows = async () => {
+      if (ingestRowBuffer.length > 0) {
+        await this.dataSource
+          .createQueryBuilder()
+          .insert()
+          .into(CsdpIngestRow)
+          .values(ingestRowBuffer as any)
+          .orIgnore()
+          .execute();
+        ingestRowBuffer.length = 0;
+      }
+    };
+
+    const flushActivation = async () => {
+      if (parsedBuffer.length === 0) return;
+
+      const msisdns = parsedBuffer.map((r) => r.msisdn);
+      const existing = await this.dataSource
+        .getRepository(CsdpSubscriber)
+        .createQueryBuilder('s')
+        .select(['s.msisdn', 's.activatedAt', 's.serviceClassId'])
+        .where('s.msisdn IN (:...msisdns)', { msisdns })
+        .getMany();
+
+      const existingByMsisdn = new Map(existing.map((s) => [s.msisdn, s]));
+
+      const upserts: Partial<CsdpSubscriber>[] = [];
+      const discrepancies: Partial<CsdpSubscriberDiscrepancyLog>[] = [];
+
+      for (const row of parsedBuffer) {
+        const current = existingByMsisdn.get(row.msisdn);
+
+        if (!current) {
+          upserts.push({
+            msisdn: row.msisdn,
+            activatedAt: row.activated_at,
+            serviceClassId: row.service_class_id,
+          });
+          continue;
+        }
+
+        // activated_at conflict?
+        if (current.activatedAt && current.activatedAt !== row.activated_at) {
+          discrepancies.push({
+            msisdn: row.msisdn,
+            field: 'activated_at',
+            existingValue: String(current.activatedAt),
+            incomingValue: row.activated_at,
+            batchId,
+            rowLineNo: row.line_no,
+          });
+        }
+
+        // service_class_id conflict?
+        if (
+          current.serviceClassId != null &&
+          row.service_class_id != null &&
+          current.serviceClassId !== row.service_class_id
+        ) {
+          discrepancies.push({
+            msisdn: row.msisdn,
+            field: 'service_class_id',
+            existingValue: String(current.serviceClassId),
+            incomingValue: String(row.service_class_id),
+            batchId,
+            rowLineNo: row.line_no,
+          });
+        }
+
+        // Fill nulls only — never overwrite existing trusted values.
+        const needsUpdate =
+          current.activatedAt == null || current.serviceClassId == null;
+        if (needsUpdate) {
+          upserts.push({
+            msisdn: row.msisdn,
+            activatedAt: current.activatedAt ?? row.activated_at,
+            serviceClassId: current.serviceClassId ?? row.service_class_id,
+          });
+        }
+      }
+
+      if (upserts.length > 0) {
+        await this.dataSource
+          .createQueryBuilder()
+          .insert()
+          .into(CsdpSubscriber)
+          .values(upserts as any)
+          .orUpdate(['activated_at', 'service_class_id'], ['msisdn'])
+          .execute();
+      }
+
+      if (discrepancies.length > 0) {
+        await this.dataSource
+          .createQueryBuilder()
+          .insert()
+          .into(CsdpSubscriberDiscrepancyLog)
+          .values(discrepancies as any)
+          .execute();
+      }
+
+      parsedBuffer.length = 0;
+    };
+
+    for await (const row of parseActivation(filePath)) {
+      rowsTotal++;
+
+      if ('error' in row) {
+        const errRow = row as ActivationRowError;
+        rowsRejected++;
+        this.ingestCounter.inc({ source, status: 'REJECTED' });
+
+        ingestRowBuffer.push({
+          batchId,
+          source,
+          fileDate,
+          externalId: `error-line-${errRow.line_no}`,
+          lineNo: errRow.line_no,
+          rawLine: errRow.raw,
+          parsed: null,
+          status: 'REJECTED',
+          errorReason: errRow.error.substring(0, 255),
+        });
+      } else {
+        const okRow = row as ActivationRow;
+        rowsOk++;
+        this.ingestCounter.inc({ source, status: 'OK' });
+
+        ingestRowBuffer.push({
+          batchId,
+          source,
+          fileDate,
+          externalId: okRow.external_id,
+          lineNo: okRow.line_no,
+          rawLine: JSON.stringify(okRow.raw),
+          parsed: {
+            msisdn: okRow.msisdn,
+            activated_at: okRow.activated_at,
+            service_class_id: okRow.service_class_id,
+          },
+          status: 'OK',
+          errorReason: null,
+        });
+
+        parsedBuffer.push(okRow);
+      }
+
+      if (parsedBuffer.length >= BATCH_SIZE) {
+        await flushActivation();
+      }
+      if (ingestRowBuffer.length >= BATCH_SIZE) {
+        await flushIngestRows();
+      }
+    }
+
+    await flushActivation();
+    await flushIngestRows();
+
+    await this.batchRepo.update(
+      { id: batchId },
+      { status: 'PARSED', rowsTotal, rowsOk, rowsRejected, parsedAt: new Date() },
+    );
+
+    this.logger.log(
+      `Batch ${batchId} (activation) parsed: total=${rowsTotal} ok=${rowsOk} rejected=${rowsRejected}`,
     );
   }
 

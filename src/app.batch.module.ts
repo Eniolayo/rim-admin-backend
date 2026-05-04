@@ -30,6 +30,7 @@ import {
   CsdpIngestRow,
   CsdpCdrRefill,
   CsdpCdrSdp,
+  CsdpSubscriberDiscrepancyLog,
 } from './entities/csdp';
 import { CsdpModule } from './modules/csdp/csdp.module';
 
@@ -126,6 +127,7 @@ import { CsdpModule } from './modules/csdp/csdp.module';
             CsdpIngestRow,
             CsdpCdrRefill,
             CsdpCdrSdp,
+            CsdpSubscriberDiscrepancyLog,
           ],
           synchronize: false,
           logging: isLogging,
@@ -179,6 +181,7 @@ import { CsdpModule } from './modules/csdp/csdp.module';
             CsdpIngestRow,
             CsdpCdrRefill,
             CsdpCdrSdp,
+            CsdpSubscriberDiscrepancyLog,
           ],
           synchronize: false,
           logging: isLogging,

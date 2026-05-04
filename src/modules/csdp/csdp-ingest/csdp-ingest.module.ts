@@ -10,6 +10,8 @@ import { CsdpCdrSdp } from '../../../entities/csdp/csdp-cdr-sdp.entity';
 import { CsdpLoan } from '../../../entities/csdp/csdp-loan.entity';
 import { CsdpRecovery } from '../../../entities/csdp/csdp-recovery.entity';
 import { CsdpRecoveryLoanItem } from '../../../entities/csdp/csdp-recovery-loan-item.entity';
+import { CsdpSubscriber } from '../../../entities/csdp/csdp-subscriber.entity';
+import { CsdpSubscriberDiscrepancyLog } from '../../../entities/csdp/csdp-subscriber-discrepancy-log.entity';
 import { IngestService } from './ingest.service';
 import { IngestController } from './ingest.controller';
 import { IngestAdminController } from './ingest-admin.controller';
@@ -29,6 +31,8 @@ import { IngestProcessor } from './processors/ingest.processor';
         CsdpLoan,
         CsdpRecovery,
         CsdpRecoveryLoanItem,
+        CsdpSubscriber,
+        CsdpSubscriberDiscrepancyLog,
       ],
       'csdpBatch',
     ),

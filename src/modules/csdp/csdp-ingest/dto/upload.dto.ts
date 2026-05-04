@@ -4,7 +4,14 @@ export class UploadDto {
   @IsDateString()
   file_date: string; // YYYY-MM-DD
 
-  @IsIn(['refill', 'sdp', 'vendor:avyra', 'vendor:erl', 'vendor:fonyou'])
+  @IsIn([
+    'refill',
+    'sdp',
+    'airtel-activation',
+    'vendor:avyra',
+    'vendor:erl',
+    'vendor:fonyou',
+  ])
   source: string;
 
   @IsString()

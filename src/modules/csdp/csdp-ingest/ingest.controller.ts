@@ -42,6 +42,19 @@ export class IngestController {
     return this.service.receive(file as MulterFile, dto);
   }
 
+  @Post('cdr/activation')
+  @UseInterceptors(FileInterceptor('file'))
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async activation(@UploadedFile() file: any, @Body() dto: UploadDto) {
+    if (!file) {
+      throw new BadRequestException('file is required');
+    }
+    if (dto.source !== 'airtel-activation') {
+      throw new BadRequestException('source must be "airtel-activation"');
+    }
+    return this.service.receive(file as MulterFile, dto);
+  }
+
   @Post('cdr/sdp')
   @UseInterceptors(FileInterceptor('file'))
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
