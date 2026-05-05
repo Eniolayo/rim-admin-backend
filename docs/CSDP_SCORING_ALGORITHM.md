@@ -380,6 +380,22 @@ decision see the pre-first-loan disbursement aggregate. In practice this is usua
 (Airtel’s own velocity controls limit how often this can happen), but it is a known staleness
 window, not a live read of disbursements at request time.
 
+### Job cost control (high-traffic operations)
+
+To keep periodic jobs affordable at scale, refresh and aging pipelines should be bounded and
+incremental, not full-table brute-force scans.
+
+- **Incremental refresh only.** Refresh feature rows for changed/active `msisdn` values rather
+  than recomputing all subscribers every cycle.
+- **Hot-vs-cold cadence.** Refresh high-activity subscribers at the full 15-minute cadence and
+  low-activity subscribers less frequently.
+- **Bounded chunks + backpressure.** Process in fixed-size batches with concurrency caps so
+  periodic jobs cannot starve the online API path.
+- **Dedicated workers.** Run refresh/aging jobs on separate worker pools or queues from API
+  servers to avoid resource contention during bursts.
+- **Execution guardrails.** Enforce max runtime, lag/queue alerts, and skip-or-defer logic if
+  the previous run is still active.
+
 **Loan status state machine** (maintained by the hourly aging job):
 
 ```
@@ -433,6 +449,37 @@ To guarantee every issued loan has the feature vector active at decision time:
 that row, but exclusion would introduce selection bias. They are down-weighted at model
 training time. A sustained mismatch rate above 1% is a webhook mapping bug, not a training
 data quirk, and should trigger an incident.
+
+### Profile eligibility idempotency and dedupe
+
+Eligibility checks must be idempotent on `trans_ref`.
+
+- Treat `trans_ref` as the idempotency key for Profile decisions.
+- Duplicate requests within a short replay window should return the same computed decision
+  where possible.
+- Decision persistence and downstream side effects must use dedupe-safe writes (unique keys
+  and/or upserts) so retries cannot create duplicate records.
+
+Recommended approach:
+
+1. Attempt read by `trans_ref` in `csdp_eligibility_log`.
+2. If found, return the stored `final_limit_naira` immediately.
+3. If not found, compute once, write once under a uniqueness constraint on `trans_ref`,
+   then return.
+4. If write races occur (concurrent duplicate requests), resolve by reading the winner row
+   and returning that decision.
+
+### Caching and config strategy
+
+`SYSTEM_CONFIG` must be process-cached in memory and periodically refreshed.
+
+- Do not fetch config from the database on every request.
+- Use a refresh interval and TTL (`CONFIG_REFRESH_MS`, `CONFIG_TTL_MS`) so the hot path is
+  compute-only after feature and exposure reads.
+- If refresh fails, continue serving with last-known-good config while TTL is valid, and
+  emit an alerting metric.
+- If config age exceeds TTL, apply explicit degraded behavior (`deny all` or `freeze to
+  static safe defaults`) and raise incident-level alerts.
 
 ---
 
