@@ -10,13 +10,48 @@ export const FLAG_INGEST_ENABLED = 'INGEST_ENABLED';
 export const FLAG_TEAMWEE_TIMEOUT_MS = 'TEAMWEE_TIMEOUT_MS';
 export const FLAG_TEAMWEE_CB_THRESHOLD = 'TEAMWEE_CB_THRESHOLD';
 
+/**
+ * CSDP `decision_mode` flag values, per CSDP_MIGRATION_PHASES.md §Phase 3.
+ *
+ * Promotion path (each step is a flag flip, not a deploy):
+ *   STUB_DENY → SHADOW → LIVE_5 → LIVE_50 → LIVE
+ *
+ * `STUB_DENY` is the safe default for any unset / missing / malformed
+ * flag value (see DecisionRouterService.decide).
+ *
+ * `PROXY` is retained for emergency rollback to the legacy Teamwee path.
+ *
+ * `SHADOW` keeps the legacy decision visible to customers while
+ * `heuristic_v3` runs alongside and writes its result + features to the
+ * snapshot/log tables for offline comparison.
+ *
+ * `LIVE_5` / `LIVE_50` route the chosen MSISDN cohort (deterministic
+ * percentile by hash) to `heuristic_v3`; everyone else stays on the
+ * shadow path. `LIVE` routes 100% to `heuristic_v3`.
+ */
 export type DecisionMode =
   | 'STUB_DENY'
   | 'PROXY'
   | 'SHADOW'
   | 'LIVE_5'
-  | 'LIVE_10'
-  | 'LIVE_20';
+  | 'LIVE_50'
+  | 'LIVE';
+
+export const DECISION_MODE_VALUES: readonly DecisionMode[] = [
+  'STUB_DENY',
+  'PROXY',
+  'SHADOW',
+  'LIVE_5',
+  'LIVE_50',
+  'LIVE',
+] as const;
+
+export function isDecisionMode(value: unknown): value is DecisionMode {
+  return (
+    typeof value === 'string' &&
+    (DECISION_MODE_VALUES as readonly string[]).includes(value)
+  );
+}
 
 const FLAG_TTL_SECONDS = 30;
 

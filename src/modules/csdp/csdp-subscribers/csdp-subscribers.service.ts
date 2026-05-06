@@ -11,7 +11,7 @@ import { toE164Nigerian } from '../../../common/utils/phone.utils';
 export interface InvestigateResult {
   msisdn: string;
   subscriber: CsdpSubscriber | null;
-  outstandingKobo: string;
+  outstandingNaira: string;
   recentEligibility: CsdpEligibilityLog[];
   recentLoans: CsdpLoan[];
   recentRecoveries: CsdpRecovery[];
@@ -44,10 +44,10 @@ export class CsdpSubscribersService {
     const loansLimit = opts?.loansLimit ?? 10;
     const recoveriesLimit = 10;
 
-    const [subscriber, outstandingKobo, recentEligibility, recentLoans, recentRecoveries] =
+    const [subscriber, outstandingNaira, recentEligibility, recentLoans, recentRecoveries] =
       await Promise.all([
         this.subRepo.findOne({ where: { msisdn } }),
-        this.balanceService.getOutstandingKobo(msisdn),
+        this.balanceService.getOutstandingNaira(msisdn),
         this.logRepo.find({
           where: { msisdn },
           order: { requestedAt: 'DESC' },
@@ -68,7 +68,7 @@ export class CsdpSubscribersService {
     return {
       msisdn,
       subscriber,
-      outstandingKobo: outstandingKobo.toString(),
+      outstandingNaira,
       recentEligibility,
       recentLoans,
       recentRecoveries,

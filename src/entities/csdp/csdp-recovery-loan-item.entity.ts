@@ -10,8 +10,8 @@ export class CsdpRecoveryLoanItem {
   @PrimaryColumn({ name: 'loan_id', type: 'varchar', length: 64 })
   loanId: string;
 
-  @Column({ name: 'amount_applied_kobo', type: 'bigint' })
-  amountAppliedKobo: string;
+  @Column({ name: 'amount_applied_naira', type: 'numeric', precision: 14, scale: 2 })
+  amountAppliedNaira: string;
 
   @ManyToOne(() => CsdpRecovery, { createForeignKeyConstraints: true })
   recovery: CsdpRecovery;

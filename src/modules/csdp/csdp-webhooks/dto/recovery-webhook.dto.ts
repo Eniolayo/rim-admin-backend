@@ -16,11 +16,11 @@ export class RecoveryWebhookDto {
   msisdn: string;
 
   @IsNumberString()
-  amount_kobo: string; // bigint as string
+  amount_naira: string;
 
   @IsDateString()
   recovered_at: string;
 
   @IsArray()
-  loan_items: { loan_id: string; amount_applied_kobo: string }[];
+  loan_items: { loan_id: string; amount_applied_naira: string }[];
 }

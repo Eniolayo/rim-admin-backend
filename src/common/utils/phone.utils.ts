@@ -64,6 +64,29 @@ export function toE164Nigerian(raw: string | null | undefined): string | null {
 }
 
 /**
+ * Canonical CSDP MSISDN regex: `234` + 10 digits (13 chars total, no `+`).
+ * Mirrors the DB CHECK constraint on every MSISDN-bearing column.
+ */
+export const MSISDN_REGEX = /^234\d{10}$/;
+
+/**
+ * Canonical CSDP MSISDN normalizer. Accepts the same shapes as
+ * `normalizeNigerianPhone` and returns the 13-digit `234XXXXXXXXXX` form.
+ *
+ * Throws on null/empty/un-normalisable input. This is the only writer for
+ * MSISDN columns — all CSDP entities route through `msisdnTransformer` which
+ * delegates here so the value persisted always satisfies `MSISDN_REGEX`
+ * (and therefore the per-table CHECK constraint).
+ */
+export function normalizeMsisdn(raw: string | null | undefined): string {
+  const e164 = toE164Nigerian(raw);
+  if (!e164 || !MSISDN_REGEX.test(e164)) {
+    throw new Error(`Invalid msisdn: ${raw ?? '<empty>'}`);
+  }
+  return e164;
+}
+
+/**
  * Masks an MSISDN for logs: keeps country code prefix + last 4, stars middle.
  * Examples: 2347030278896 -> 234XXXXX8896
  */

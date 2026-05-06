@@ -8,6 +8,8 @@ import {
 } from 'typeorm';
 import { msisdnTransformer } from '../../modules/csdp/csdp-core/msisdn/msisdn.transformer';
 
+export type CsdpLoanStatus = 'ISSUED' | 'PARTIAL' | 'RECOVERED' | 'DEFAULTED';
+
 @Entity({ name: 'csdp_loan' })
 export class CsdpLoan {
   @PrimaryColumn({ name: 'loan_id', type: 'varchar', length: 64 })
@@ -31,9 +33,9 @@ export class CsdpLoan {
   @Column({ name: 'repayable_naira', type: 'numeric', precision: 12, scale: 2 })
   repayableNaira: string;
 
-  /** ISSUED | RECOVERED | DEFAULTED | CANCELLED */
+  /** ISSUED | PARTIAL | RECOVERED | DEFAULTED */
   @Column({ type: 'varchar', length: 16 })
-  status: string;
+  status: CsdpLoanStatus;
 
   @Index()
   @Column({ name: 'trans_ref', type: 'varchar', length: 64, nullable: true })

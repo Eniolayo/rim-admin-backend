@@ -5,7 +5,8 @@ import { readCsv } from './csv.reader';
 export interface RefillRow {
   msisdn: string;
   event_at: Date;
-  amount_kobo: bigint;
+  /** Naira value as string with 2 decimal places, e.g. "100.50". */
+  amount_naira: string;
   service_class: number | null;
   raw: Record<string, string>;
   line_no: number;
@@ -76,12 +77,13 @@ export async function* parseRefill(
       yield { error: 'empty transactionAmount', raw: rawLine, line_no: lineNo };
       continue;
     }
-    const amountNaira = parseFloat(amountStr);
-    if (isNaN(amountNaira) || amountNaira < 0) {
+    const amountNum = parseFloat(amountStr);
+    if (isNaN(amountNum) || amountNum < 0) {
       yield { error: `invalid transactionAmount: ${amountStr}`, raw: rawLine, line_no: lineNo };
       continue;
     }
-    const amountKobo = BigInt(Math.round(amountNaira * 100));
+    // Normalise to a 2-decimal naira string so it round-trips into numeric(14,2).
+    const amountNaira = amountNum.toFixed(2);
 
     let serviceClass: number | null = null;
     if (serviceClassStr) {
@@ -96,7 +98,7 @@ export async function* parseRefill(
     yield {
       msisdn,
       event_at: eventAt,
-      amount_kobo: amountKobo,
+      amount_naira: amountNaira,
       service_class: serviceClass,
       raw: fields,
       line_no: lineNo,

@@ -14,9 +14,11 @@ describe('msisdnTransformer', () => {
       expect(msisdnTransformer.to('+2347030278896')).toBe('2347030278896');
     });
 
-    it('passes through garbage input unchanged (cannot normalise)', () => {
-      // 'abc' cannot be normalised; toE164Nigerian returns null, so fallback is original value
-      expect(msisdnTransformer.to('abc')).toBe('abc');
+    it('throws on garbage input that cannot be normalised', () => {
+      // Phase 1: transformer is strict — pairs with the per-column DB CHECK.
+      // Any value that does not normalise to ^234\d{10}$ must fail loudly so
+      // we never persist a non-canonical MSISDN.
+      expect(() => msisdnTransformer.to!('abc')).toThrow(/msisdn/i);
     });
 
     it('returns null for null input', () => {

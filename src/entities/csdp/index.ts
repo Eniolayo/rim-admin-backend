@@ -11,3 +11,8 @@ export { CsdpIngestRow } from './csdp-ingest-row.entity';
 export { CsdpCdrRefill } from './csdp-cdr-refill.entity';
 export { CsdpCdrSdp } from './csdp-cdr-sdp.entity';
 export { CsdpSubscriberDiscrepancyLog } from './csdp-subscriber-discrepancy-log.entity';
+export { CsdpSubscriberFeatureRow } from './csdp-subscriber-feature-row.entity';
+export { CsdpCreditProfile } from './csdp-credit-profile.entity';
+export { CsdpCreditScoreHistory } from './csdp-credit-score-history.entity';
+export { CsdpEligibilityFeaturesSnapshot } from './csdp-eligibility-features-snapshot.entity';
+export { CsdpLoanFeaturesSnapshot } from './csdp-loan-features-snapshot.entity';

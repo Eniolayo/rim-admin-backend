@@ -13,8 +13,8 @@ export class CsdpSubscriber {
   @PrimaryColumn({ type: 'varchar', length: 13 })
   msisdn: string;
 
-  @Column({ name: 'outstanding_kobo', type: 'bigint', default: 0 })
-  outstandingKobo: string;
+  @Column({ name: 'outstanding_naira', type: 'numeric', precision: 14, scale: 2, default: 0 })
+  outstandingNaira: string;
 
   @Column({ name: 'loans_taken', type: 'int', default: 0 })
   loansTaken: number;

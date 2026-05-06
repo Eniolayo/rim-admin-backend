@@ -4,7 +4,8 @@ import * as readline from 'readline';
 export interface SdpRow {
   msisdn: string;
   event_at: Date;
-  amount_kobo: bigint;
+  /** Naira value as string with 2 decimal places. */
+  amount_naira: string;
   raw: any;
   line_no: number;
   external_id: string;
@@ -62,13 +63,13 @@ export async function* parseSdp(
       continue;
     }
 
-    const amountNaira = parseFloat(amountStr);
-    if (isNaN(amountNaira)) {
+    const amountNum = parseFloat(amountStr);
+    if (isNaN(amountNum)) {
       yield { error: `invalid amount: ${amountStr}`, raw: line, line_no: lineNo };
       continue;
     }
 
-    const amountKobo = BigInt(Math.round(amountNaira * 100));
+    const amountNaira = amountNum.toFixed(2);
     const eventAtIso = eventAt.toISOString();
     const external_id = `${msisdn}|${eventAtIso}|${amountStr}`;
 
@@ -77,6 +78,6 @@ export async function* parseSdp(
       raw[`field${idx}`] = val;
     });
 
-    yield { msisdn, event_at: eventAt, amount_kobo: amountKobo, raw, line_no: lineNo, external_id };
+    yield { msisdn, event_at: eventAt, amount_naira: amountNaira, raw, line_no: lineNo, external_id };
   }
 }

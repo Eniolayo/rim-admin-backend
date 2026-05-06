@@ -29,7 +29,7 @@ describe('parseRefill (CSV)', () => {
     expect(rows).toHaveLength(1);
     const row = rows[0] as RefillRow;
     expect(row.msisdn).toBe('2347010892868');
-    expect(row.amount_kobo).toBe(10050n);
+    expect(row.amount_naira).toBe('100.50');
     expect(row.service_class).toBe(378);
     // 09:28 Lagos (UTC+1, no DST) => 08:28 UTC.
     expect(row.event_at.toISOString()).toBe('2025-12-19T08:28:25.000Z');

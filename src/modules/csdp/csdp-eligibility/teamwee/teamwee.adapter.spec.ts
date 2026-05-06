@@ -28,7 +28,7 @@ function makeResponse(
 const baseRequest: TeamweeEligibilityRequest = {
   msisdn: '2348012345678',
   transRef: 'ref-001',
-  daKobo: BigInt(1000),
+  daKobo: '1000',
   loanType: 'AIRTIME',
 };
 
@@ -87,21 +87,29 @@ describe('TeamweeAdapter', () => {
 
   // ---- Happy path ----------------------------------------------------------
 
-  it('returns limitKobo as BigInt and circuit stays CLOSED', async () => {
+  it('returns limitNaira from Teamwee response and circuit stays CLOSED', async () => {
     fetchSpy.mockResolvedValueOnce(
-      makeResponse(200, { limit_kobo: 5000 }),
+      makeResponse(200, { limit_naira: '50.00' }),
     );
 
     const adapter = await buildModule();
     const result = await adapter.checkEligibility(baseRequest);
 
-    expect(result.limitKobo).toBe(5000n);
-    expect(result.rawResponse).toEqual({ limit_kobo: 5000 });
+    expect(result.limitNaira).toBe('50.00');
+    expect(result.rawResponse).toEqual({ limit_naira: '50.00' });
     expect(result.latencyMs).toBeGreaterThanOrEqual(0);
+    const [calledUrl, calledInit] = fetchSpy.mock.calls[0] as [string, RequestInit];
+    expect(calledUrl).toContain('/eligibility?');
+    expect(calledUrl).toContain('msisdn=2348012345678');
+    expect(calledUrl).toContain('transRef=ref-001');
+    expect(calledUrl).toContain('loanType=AIRTIME');
+    expect(calledUrl).toContain('da=1000');
+    expect(calledInit.method).toBe('GET');
+    expect(calledInit.body).toBeUndefined();
     // Circuit should still be CLOSED — subsequent call must reach fetch
-    fetchSpy.mockResolvedValueOnce(makeResponse(200, { limit_kobo: 0 }));
+    fetchSpy.mockResolvedValueOnce(makeResponse(200, { limit_naira: '0.00' }));
     const r2 = await adapter.checkEligibility(baseRequest);
-    expect(r2.limitKobo).toBe(0n);
+    expect(r2.limitNaira).toBe('0.00');
   });
 
   // ---- Missing config ------------------------------------------------------
@@ -142,7 +150,7 @@ describe('TeamweeAdapter', () => {
 
   // ---- Malformed body -----------------------------------------------------
 
-  it('throws TeamweeUnavailableError(malformed) when limit_kobo is missing', async () => {
+  it('throws TeamweeUnavailableError(malformed) when limit_naira is missing', async () => {
     fetchSpy.mockResolvedValueOnce(makeResponse(200, { something_else: 1 }));
 
     const adapter = await buildModule();
@@ -151,9 +159,9 @@ describe('TeamweeAdapter', () => {
     });
   });
 
-  it('throws TeamweeUnavailableError(malformed) when limit_kobo is non-numeric', async () => {
+  it('throws TeamweeUnavailableError(malformed) when limit_naira is non-numeric', async () => {
     fetchSpy.mockResolvedValueOnce(
-      makeResponse(200, { limit_kobo: 'not-a-number' }),
+      makeResponse(200, { limit_naira: 'not-a-number' }),
     );
 
     const adapter = await buildModule();
@@ -168,12 +176,12 @@ describe('TeamweeAdapter', () => {
     const connError = new Error('ECONNREFUSED');
     fetchSpy
       .mockRejectedValueOnce(connError) // first attempt fails
-      .mockResolvedValueOnce(makeResponse(200, { limit_kobo: 200 })); // retry succeeds
+      .mockResolvedValueOnce(makeResponse(200, { limit_naira: '2.00' })); // retry succeeds
 
     const adapter = await buildModule();
     const result = await adapter.checkEligibility(baseRequest);
 
-    expect(result.limitKobo).toBe(200n);
+    expect(result.limitNaira).toBe('2.00');
     expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 

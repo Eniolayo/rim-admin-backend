@@ -200,7 +200,7 @@ export class IngestProcessor extends WorkerHost {
           parsed: {
             msisdn: okRow.msisdn,
             event_at: okRow.event_at.toISOString(),
-            amount_kobo: okRow.amount_kobo.toString(),
+            amount_naira: okRow.amount_naira,
           },
           status: 'OK',
           errorReason: null,
@@ -210,7 +210,7 @@ export class IngestProcessor extends WorkerHost {
           batchId,
           msisdn: okRow.msisdn,
           eventAt: okRow.event_at,
-          amountKobo: okRow.amount_kobo.toString(),
+          amountNaira: okRow.amount_naira,
           serviceClass: okRow.service_class,
           raw: okRow.raw,
         });
@@ -307,7 +307,7 @@ export class IngestProcessor extends WorkerHost {
           parsed: {
             msisdn: okRow.msisdn,
             event_at: okRow.event_at.toISOString(),
-            amount_kobo: okRow.amount_kobo.toString(),
+            amount_naira: okRow.amount_naira,
           },
           status: 'OK',
           errorReason: null,
@@ -317,7 +317,7 @@ export class IngestProcessor extends WorkerHost {
           batchId,
           msisdn: okRow.msisdn,
           eventAt: okRow.event_at,
-          amountKobo: okRow.amount_kobo.toString(),
+          amountNaira: okRow.amount_naira,
           raw: okRow.raw,
         });
       }
@@ -650,7 +650,7 @@ export class IngestProcessor extends WorkerHost {
       loanType: (payload['loan_type'] ?? 'AIRTIME').toUpperCase(),
       principalNaira: payload['principal_naira'] ?? payload['principal'] ?? '0',
       repayableNaira: payload['repayable_naira'] ?? payload['repayable'] ?? '0',
-      status: (payload['status'] ?? 'ISSUED').toUpperCase(),
+      status: (payload['status'] ?? 'ISSUED').toUpperCase() as CsdpLoan['status'],
       transRef: payload['trans_ref'] ?? null,
       issuedAt: payload['issued_at'] ? new Date(payload['issued_at']) : new Date(),
       recoveredAt: payload['recovered_at'] ? new Date(payload['recovered_at']) : null,
@@ -658,10 +658,12 @@ export class IngestProcessor extends WorkerHost {
   }
 
   private mapVendorRecovery(payload: Record<string, string>): Partial<CsdpRecovery> {
+    // Vendor file may carry either `amount_naira` or the legacy `amount_kobo`
+    // field name; we treat the value as naira (matches production data).
     return {
       recoveryId: payload['recovery_id'] ?? payload['id'] ?? '',
       msisdn: payload['msisdn'] ?? '',
-      amountKobo: payload['amount_kobo'] ?? '0',
+      amountNaira: payload['amount_naira'] ?? payload['amount_kobo'] ?? '0',
       recoveredAt: payload['recovered_at'] ? new Date(payload['recovered_at']) : new Date(),
     };
   }

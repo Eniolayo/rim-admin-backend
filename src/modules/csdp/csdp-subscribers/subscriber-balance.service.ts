@@ -6,6 +6,12 @@ import { CsdpSubscriber } from '../../../entities/csdp/csdp-subscriber.entity';
 import { CSDP_REDIS_CACHE } from '../csdp-core/redis-cache/csdp-redis.constants';
 import { toE164Nigerian } from '../../../common/utils/phone.utils';
 
+/**
+ * Subscriber outstanding-balance accessor.
+ *
+ * All values are naira strings (matching the DB `numeric(14,2)` mapping).
+ * Postgres handles the arithmetic; we never touch JS Number for money.
+ */
 @Injectable()
 export class SubscriberBalanceService {
   constructor(
@@ -18,7 +24,7 @@ export class SubscriberBalanceService {
     return `sub:${msisdn}:balance`;
   }
 
-  async getOutstandingKobo(msisdnRaw: string): Promise<bigint> {
+  async getOutstandingNaira(msisdnRaw: string): Promise<string> {
     const msisdn = toE164Nigerian(msisdnRaw);
     if (!msisdn) {
       throw new BadRequestException(`Invalid MSISDN: ${msisdnRaw}`);
@@ -26,57 +32,51 @@ export class SubscriberBalanceService {
 
     const key = this.cacheKey(msisdn);
     const cached = await this.redis.get(key);
+    if (cached !== null) return cached;
 
-    if (cached !== null) {
-      return BigInt(cached);
-    }
-
-    // Cache miss — read from Postgres
     const row = await this.repo.findOne({ where: { msisdn } });
-    const value = row ? BigInt(row.outstandingKobo) : 0n;
-    await this.redis.setex(key, 60, value.toString());
+    const value = row ? row.outstandingNaira : '0';
+    await this.redis.setex(key, 60, value);
     return value;
   }
 
-  async addOutstandingKobo(msisdnRaw: string, deltaKobo: bigint): Promise<bigint> {
+  async addOutstandingNaira(msisdnRaw: string, deltaNaira: string): Promise<string> {
     const msisdn = toE164Nigerian(msisdnRaw);
     if (!msisdn) {
       throw new BadRequestException(`Invalid MSISDN: ${msisdnRaw}`);
     }
 
-    const result: Array<{ outstanding_kobo: string }> = await this.repo.query(
-      `INSERT INTO csdp_subscriber (msisdn, outstanding_kobo, loans_taken, loans_recovered, blacklisted)
+    const result: Array<{ outstanding_naira: string }> = await this.repo.query(
+      `INSERT INTO csdp_subscriber (msisdn, outstanding_naira, loans_taken, loans_recovered, blacklisted)
        VALUES ($1, $2, 0, 0, false)
        ON CONFLICT (msisdn) DO UPDATE
-         SET outstanding_kobo = csdp_subscriber.outstanding_kobo + EXCLUDED.outstanding_kobo,
+         SET outstanding_naira = csdp_subscriber.outstanding_naira + EXCLUDED.outstanding_naira,
              updated_at = now()
-       RETURNING outstanding_kobo`,
-      [msisdn, deltaKobo.toString()],
+       RETURNING outstanding_naira`,
+      [msisdn, deltaNaira],
     );
 
-    const newTotal = BigInt(result[0].outstanding_kobo);
-    const key = this.cacheKey(msisdn);
-    await this.redis.setex(key, 60, newTotal.toString());
+    const newTotal = result[0].outstanding_naira;
+    await this.redis.setex(this.cacheKey(msisdn), 60, newTotal);
     return newTotal;
   }
 
-  async setOutstandingKobo(msisdnRaw: string, totalKobo: bigint): Promise<void> {
+  async setOutstandingNaira(msisdnRaw: string, totalNaira: string): Promise<void> {
     const msisdn = toE164Nigerian(msisdnRaw);
     if (!msisdn) {
       throw new BadRequestException(`Invalid MSISDN: ${msisdnRaw}`);
     }
 
     await this.repo.query(
-      `INSERT INTO csdp_subscriber (msisdn, outstanding_kobo, loans_taken, loans_recovered, blacklisted)
+      `INSERT INTO csdp_subscriber (msisdn, outstanding_naira, loans_taken, loans_recovered, blacklisted)
        VALUES ($1, $2, 0, 0, false)
        ON CONFLICT (msisdn) DO UPDATE
-         SET outstanding_kobo = EXCLUDED.outstanding_kobo,
+         SET outstanding_naira = EXCLUDED.outstanding_naira,
              updated_at = now()`,
-      [msisdn, totalKobo.toString()],
+      [msisdn, totalNaira],
     );
 
-    const key = this.cacheKey(msisdn);
-    await this.redis.setex(key, 60, totalKobo.toString());
+    await this.redis.setex(this.cacheKey(msisdn), 60, totalNaira);
   }
 
   async invalidate(msisdnRaw: string): Promise<void> {

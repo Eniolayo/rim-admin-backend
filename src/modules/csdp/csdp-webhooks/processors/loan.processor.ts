@@ -5,6 +5,9 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { toE164Nigerian, maskMsisdn } from '../../../../common/utils/phone.utils';
 import { SubscriberBalanceService } from '../../../csdp/csdp-subscribers/subscriber-balance.service';
+import { FeatureRowLiveWriterService } from '../../csdp-linking/feature-row-live-writer.service';
+import { CsdpLiveCountersService } from '../../csdp-linking/csdp-live-counters.service';
+import { LoanSnapshotService } from '../../csdp-linking/loan-snapshot.service';
 
 export interface LoanJobPayload {
   loan_id: string;
@@ -28,6 +31,9 @@ export class LoanProcessor extends WorkerHost {
     @InjectDataSource('csdpBatch')
     private readonly dataSource: DataSource,
     private readonly subscriberBalance: SubscriberBalanceService,
+    private readonly featureRow: FeatureRowLiveWriterService,
+    private readonly counters: CsdpLiveCountersService,
+    private readonly loanSnapshot: LoanSnapshotService,
   ) {
     super();
   }
@@ -49,6 +55,8 @@ export class LoanProcessor extends WorkerHost {
       );
     }
 
+    let isFirstDelivery = false;
+
     await this.dataSource.transaction(async (manager) => {
       // Upsert the loan row, capturing the prior status
       const existing: Array<{ status: string }> = await manager.query(
@@ -56,6 +64,7 @@ export class LoanProcessor extends WorkerHost {
         [data.loan_id],
       );
       const priorStatus = existing.length > 0 ? existing[0].status : null;
+      isFirstDelivery = priorStatus === null;
 
       // Upsert loan
       await manager.query(
@@ -80,41 +89,85 @@ export class LoanProcessor extends WorkerHost {
         ],
       );
 
-      // Recompute outstanding_kobo from all ISSUED loans for this subscriber.
-      // This is the "recompute" strategy: safe against double-processing and
-      // concurrent mutations without complex delta tracking.
+      // Recompute outstanding_naira from all ISSUED loans for this subscriber.
+      // Recompute strategy: safe against double-processing and concurrent
+      // mutations without explicit delta tracking. repayable_naira is already
+      // numeric(12,2); SUM yields a numeric naira string directly.
       const sumResult: Array<{ total: string | null }> = await manager.query(
-        `SELECT COALESCE(SUM(CAST(repayable_naira * 100 AS BIGINT)), 0)::text AS total
+        `SELECT COALESCE(SUM(repayable_naira), 0)::text AS total
          FROM csdp_loan
          WHERE msisdn = $1 AND status = 'ISSUED'`,
         [msisdn],
       );
-      const recomputedKobo = BigInt(sumResult[0]?.total ?? '0');
+      const recomputedNaira = sumResult[0]?.total ?? '0';
 
       // Update loans_taken counter only if this is a newly inserted ISSUED loan
       if (data.status === 'ISSUED' && priorStatus === null) {
         await manager.query(
-          `INSERT INTO csdp_subscriber (msisdn, outstanding_kobo, loans_taken, loans_recovered, blacklisted)
+          `INSERT INTO csdp_subscriber (msisdn, outstanding_naira, loans_taken, loans_recovered, blacklisted)
            VALUES ($1, $2, 1, 0, false)
            ON CONFLICT (msisdn) DO UPDATE
-             SET outstanding_kobo = EXCLUDED.outstanding_kobo,
+             SET outstanding_naira = EXCLUDED.outstanding_naira,
                  loans_taken      = csdp_subscriber.loans_taken + 1,
                  last_loan_at     = $3,
                  updated_at       = now()`,
-          [msisdn, recomputedKobo.toString(), data.issued_at],
+          [msisdn, recomputedNaira, data.issued_at],
         );
+
+        // §5.4 live writer: bump loans_taken_180d + add to our_outstanding_kobo.
+        // Only on first delivery — replay (priorStatus !== null) is a no-op.
+        await this.featureRow.onLoanIssued(
+          msisdn,
+          data.repayable_naira,
+          manager,
+        );
+
+        // Redis disbursed-24h counter (§7 Stage 4 clamp 2). Member uniqueness
+        // by loan_id makes ZADD on the same id idempotent. Failures here
+        // must not roll back the DB write — daily materializer reconciles
+        // the PG mirror column nightly.
+        try {
+          await this.counters.recordDisbursement(
+            msisdn,
+            data.loan_id,
+            data.repayable_naira,
+            new Date(data.issued_at).getTime(),
+          );
+        } catch (err) {
+          this.logger.warn(
+            `recordDisbursement failed for loan ${data.loan_id}: ${(err as Error).message}`,
+          );
+        }
       } else {
         // Just sync outstanding balance (status change or re-delivery)
         await manager.query(
-          `INSERT INTO csdp_subscriber (msisdn, outstanding_kobo, loans_taken, loans_recovered, blacklisted)
+          `INSERT INTO csdp_subscriber (msisdn, outstanding_naira, loans_taken, loans_recovered, blacklisted)
            VALUES ($1, $2, 0, 0, false)
            ON CONFLICT (msisdn) DO UPDATE
-             SET outstanding_kobo = EXCLUDED.outstanding_kobo,
+             SET outstanding_naira = EXCLUDED.outstanding_naira,
                  updated_at       = now()`,
-          [msisdn, recomputedKobo.toString()],
+          [msisdn, recomputedNaira],
         );
       }
     });
+
+    // §10 two-point snapshot — written outside the loan transaction so a
+    // snapshot failure can never roll back the loan write. ON CONFLICT
+    // (loan_id) DO NOTHING makes replays idempotent. Only snapshot on
+    // first delivery; subsequent status updates leave the original row.
+    if (isFirstDelivery) {
+      try {
+        await this.loanSnapshot.snapshotLoan(
+          data.loan_id,
+          msisdn,
+          data.trans_ref ?? null,
+        );
+      } catch (err) {
+        this.logger.warn(
+          `loan snapshot failed for loan ${data.loan_id}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   @OnWorkerEvent('failed')

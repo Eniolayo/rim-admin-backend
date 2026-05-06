@@ -135,25 +135,29 @@ export class TeamweeAdapter {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    // NOTE: /eligibility is a placeholder path — real path TBD from Teamwee API docs.
-    const url = `${this.baseUrl}/eligibility`;
+    // Teamwee wire contract: `da` is kobo on the request, `limit_naira` on the response.
+    // We forward the raw kobo string Airtel sent us — no naira round-trip.
+    const params = new URLSearchParams({
+      msisdn: req.msisdn,
+      transRef: req.transRef,
+      loanType: req.loanType,
+    });
+    if (req.daKobo !== null) {
+      params.set('da', req.daKobo);
+    }
+
+    // Teamwee contract is GET with query params.
+    const url = `${this.baseUrl}/eligibility?${params.toString()}`;
 
     let response: Response;
     try {
       response = await fetch(url, {
-        method: 'POST',
+        method: 'GET',
         signal: controller.signal,
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
-          'Content-Type': 'application/json',
           'X-Trans-Ref': req.transRef,
         },
-        body: JSON.stringify({
-          msisdn: req.msisdn,
-          transRef: req.transRef,
-          daKobo: String(req.daKobo),
-          loanType: req.loanType,
-        }),
       });
     } catch (err: unknown) {
       clearTimeout(timer);
@@ -188,27 +192,26 @@ export class TeamweeAdapter {
       throw new TeamweeUnavailableError('malformed', 'Response is not JSON');
     }
 
-    // NOTE: expected schema { limit_kobo: number | string } — placeholder,
-    // real field names TBD from Teamwee API docs.
+    // Teamwee returns naira on the wire.
     const raw = body as Record<string, unknown>;
-    const limitRaw = raw['limit_kobo'];
+    const limitRaw = raw['limit_naira'];
     if (limitRaw === undefined || limitRaw === null) {
       throw new TeamweeUnavailableError(
         'malformed',
-        'Missing limit_kobo in response',
+        'Missing limit_naira in response',
       );
     }
-    const limitNum =
-      typeof limitRaw === 'string' ? Number(limitRaw) : Number(limitRaw);
-    if (!Number.isFinite(limitNum)) {
+    const limitNaira = String(limitRaw).trim();
+    if (!/^-?\d+(\.\d{1,2})?$/.test(limitNaira)) {
       throw new TeamweeUnavailableError(
         'malformed',
-        `Non-numeric limit_kobo: ${String(limitRaw)}`,
+        `Invalid limit_naira: ${String(limitRaw)}`,
       );
     }
 
     return {
-      limitKobo: BigInt(Math.round(limitNum)),
+      // Teamwee already returns naira; keep internal contract unchanged.
+      limitNaira,
       rawResponse: body,
       latencyMs,
     };

@@ -1,13 +1,30 @@
 import { Logger } from '@nestjs/common';
 import { Processor, WorkerHost, OnWorkerEvent } from '@nestjs/bullmq';
+import { InjectMetric } from '@willsoto/nestjs-prometheus';
+import { Gauge } from 'prom-client';
 import { Job } from 'bullmq';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { CSDP_METRICS } from '../../csdp-core/metrics/csdp-metrics.module';
+import { FeatureRowMaterializerService } from '../feature-row-materializer.service';
 
 export interface LinkingSweepResult {
   linked: number;
   refreshed: number;
 }
+
+export interface MaterializeResult {
+  linked: number;
+  refreshed: number;
+  upserted: number;
+}
+
+/** Legacy sweep job name retained so existing Bull repeatables clean up
+ *  cleanly on first boot of the new code. The scheduler no longer
+ *  registers it; from Phase 2 step 11 onwards the daily materialize job
+ *  absorbs the log-linking sweep. */
+export const LINKING_JOB_SWEEP = 'sweep';
+export const LINKING_JOB_MATERIALIZE = 'materialize-feature-rows';
 
 @Processor('csdp-eligibility-linking', { concurrency: 1 })
 export class EligibilityLinkingProcessor extends WorkerHost {
@@ -16,17 +33,31 @@ export class EligibilityLinkingProcessor extends WorkerHost {
   constructor(
     @InjectDataSource('csdpBatch')
     private readonly dataSource: DataSource,
+    private readonly materializer: FeatureRowMaterializerService,
+    @InjectMetric(CSDP_METRICS.linkingProcessorLastSuccess)
+    private readonly lastSuccessGauge: Gauge<string>,
   ) {
     super();
   }
 
-  async process(job: Job): Promise<LinkingSweepResult> {
-    if (job.name !== 'sweep') {
-      this.logger.warn(`Unknown job name: ${job.name}, skipping`);
-      return { linked: 0, refreshed: 0 };
+  async process(
+    job: Job,
+  ): Promise<LinkingSweepResult | MaterializeResult> {
+    if (job.name === LINKING_JOB_SWEEP) {
+      // Pre-step-11 repeatable left over in Bull. Run the cheap sweep so
+      // it does the right thing in transition; the scheduler no longer
+      // registers this job name, so once existing repeatables drain it
+      // disappears on its own.
+      return this.runSweep();
     }
-
-    return this.runSweep();
+    if (job.name === LINKING_JOB_MATERIALIZE) {
+      const sweep = await this.runSweep();
+      const upserted = await this.materializer.refreshActiveSubscribers();
+      this.lastSuccessGauge.set(Math.floor(Date.now() / 1000));
+      return { ...sweep, upserted };
+    }
+    this.logger.warn(`Unknown job name: ${job.name}, skipping`);
+    return { linked: 0, refreshed: 0 };
   }
 
   private async runSweep(): Promise<LinkingSweepResult> {

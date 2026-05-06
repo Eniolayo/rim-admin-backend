@@ -18,8 +18,8 @@ export class CsdpCdrSdp {
   @Column({ name: 'event_at', type: 'timestamptz' })
   eventAt: Date;
 
-  @Column({ name: 'amount_kobo', type: 'bigint' })
-  amountKobo: string;
+  @Column({ name: 'amount_naira', type: 'numeric', precision: 14, scale: 2 })
+  amountNaira: string;
 
   @Column({ type: 'jsonb' })
   raw: Record<string, any>;

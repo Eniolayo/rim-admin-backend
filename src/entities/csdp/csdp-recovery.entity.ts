@@ -10,8 +10,8 @@ export class CsdpRecovery {
   @Column({ type: 'varchar', length: 13, transformer: msisdnTransformer })
   msisdn: string;
 
-  @Column({ name: 'amount_kobo', type: 'bigint' })
-  amountKobo: string;
+  @Column({ name: 'amount_naira', type: 'numeric', precision: 14, scale: 2 })
+  amountNaira: string;
 
   @Column({ name: 'recovered_at', type: 'timestamptz' })
   recoveredAt: Date;

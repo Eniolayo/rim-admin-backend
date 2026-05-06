@@ -8,7 +8,11 @@ import { CsdpWebhookInboundLog } from '../../../entities/csdp/csdp-webhook-inbou
 import { CsdpSubscriber } from '../../../entities/csdp/csdp-subscriber.entity';
 import { CsdpWebhookInboundLogModule } from '../csdp-core/webhook-inbound-log/csdp-webhook-inbound-log.module';
 import { CsdpSubscribersModule } from '../csdp-subscribers/csdp-subscribers.module';
+import { CsdpLinkingModule } from '../csdp-linking/csdp-linking.module';
 import { WebhooksController } from './webhooks.controller';
+import { AirtelWebhookController } from './airtel-webhook.controller';
+import { AirtelWebhookMapper } from './airtel-webhook.mapper';
+import { AirtelApiKeyGuard } from './airtel-api-key.guard';
 import { IdempotencyGuard } from './idempotency.guard';
 import { LoanProcessor } from './processors/loan.processor';
 import { RecoveryProcessor } from './processors/recovery.processor';
@@ -29,8 +33,15 @@ import { RecoveryProcessor } from './processors/recovery.processor';
     ),
     CsdpWebhookInboundLogModule,
     CsdpSubscribersModule,
+    CsdpLinkingModule,
   ],
-  controllers: [WebhooksController],
-  providers: [IdempotencyGuard, LoanProcessor, RecoveryProcessor],
+  controllers: [WebhooksController, AirtelWebhookController],
+  providers: [
+    IdempotencyGuard,
+    AirtelApiKeyGuard,
+    AirtelWebhookMapper,
+    LoanProcessor,
+    RecoveryProcessor,
+  ],
 })
 export class CsdpWebhooksModule {}
